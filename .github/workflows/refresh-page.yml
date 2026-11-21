@@ -1,0 +1,29 @@
+name: Refresh demo page
+
+# Rebuild docs/index.html with fresh market data after A-share close
+# (10:00 UTC = 18:00 Beijing, weekdays only).
+on:
+  schedule:
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e . plotly
+      - name: Rebuild page
+        run: python scripts/build_page.py
+      - uses: stefanzweifel/git-auto-commit-action@v6
+        with:
+          commit_message: "chore: refresh demo page snapshot"
+          file_pattern: docs/index.html

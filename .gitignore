@@ -9,3 +9,6 @@ __pycache__/
 .env
 data/paper_account.json
 inspector-config.json
+
+# Local tooling binaries (cloudflared etc.)
+tools/

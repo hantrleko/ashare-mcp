@@ -1,54 +1,50 @@
 # ashare-mcp
 
-MCP server for **A-share (China mainland) market data, paper trading,
-strategy backtesting and company fundamentals** — built for AI agents
-(Claude Desktop, Cursor, Claude Code, etc.).
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)](https://github.com/hantrleko/ashare-mcp)
+[![MCP](https://img.shields.io/badge/MCP-stdio-7b7ff2)](https://modelcontextprotocol.io)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Demo Page](https://img.shields.io/badge/demo-GitHub%20Pages-orange)](https://hantrleko.github.io/ashare-mcp/)
+
+MCP server + Streamlit dashboard for **A-share (China mainland) market data,
+paper trading, strategy backtesting and company fundamentals** — built for AI
+agents (Claude Desktop, Cursor, Claude Code, …).
 
 Data: **akshare** primary (Sina/Tencent endpoints preferred, East Money
-fallback), **tushare** automatic fallback when `TUSHARE_TOKEN` is set.
+fallback with rate-limit cooldown), **tushare** automatic fallback when
+`TUSHARE_TOKEN` is set.
 
-## Features
+📊 **[在线展示页 / Live snapshot](https://hantrleko.github.io/ashare-mcp/)** —
+每日收盘后 GitHub Actions 自动刷新。
 
-| Area | Tools |
-|---|---|
-| Market data | `search_stock`, `get_quote`, `get_quotes`, `get_kline`, `get_index_quote`, `get_index_kline`, `get_market_overview`, `get_limit_pool`, `get_money_flow` |
-| Fundamentals | `get_financial_abstract`, `get_financial_statement` |
-| Paper trading | `paper_status`, `paper_buy`, `paper_sell`, `paper_positions`, `paper_orders`, `paper_reset` |
-| Backtest | `run_backtest` (`ma_cross`, `momentum`, `grid`, `buy_hold`) |
-| Meta | `provider_status` |
+---
 
-Paper trading models real A-share rules: 100-share lots, T+1, ±10%/20%/30%/5%
-price limits, commission + stamp tax + transfer fees. State persists to
-`data/paper_account.json`.
+## 功能总览
 
-## Setup
+| 模块 | MCP 工具 | 说明 |
+|---|---|---|
+| 行情数据 | `search_stock` `get_quote` `get_quotes` `get_kline` `get_index_quote` `get_index_kline` `get_market_overview` `get_limit_pool` `get_money_flow` | 搜索/实时报价/日周月K/指数/涨跌家数/涨停跌停池/主力资金流 |
+| 财务基本面 | `get_financial_abstract` `get_financial_statement` | 财务指标摘要 + 利润表/资产负债表/现金流量表 |
+| 模拟盘 | `paper_status` `paper_buy` `paper_sell` `paper_positions` `paper_orders` `paper_reset` | 1手=100股、T+1、±10/20/30/5%涨跌停、佣金万2.5+印花税万5+过户费万0.1，JSON持久化 |
+| 策略回测 | `run_backtest` | `ma_cross`/`momentum`/`grid`/`buy_hold`，信号收盘产生、次日开盘成交，无未来函数 |
+| 数据源 | `provider_status` | akshare 主源状态、tushare token 配置检查 |
 
-Requires Python ≥ 3.10 (developed on 3.12 via `uv`).
+## 安装
+
+需要 Python ≥ 3.10。
 
 ```powershell
-cd F:\Hermes\ashare-mcp
-uv venv --python 3.12 .venv
+git clone https://github.com/hantrleko/ashare-mcp
+cd ashare-mcp
+uv venv --python 3.12 .venv          # 或 python -m venv .venv
 uv pip install --python .venv\Scripts\python.exe -e .
 ```
 
-Optional: copy `.env.example` to `.env` and set `TUSHARE_TOKEN` for the
-fallback provider (get one at https://tushare.pro).
+可选：复制 `.env.example` → `.env`，填入 `TUSHARE_TOKEN` 启用降级数据源
+（token 在 https://tushare.pro 免费注册）。
 
-## Web dashboard (看效果)
+## 接入 MCP 客户端
 
-A Streamlit UI wraps the same engines — market overview, stock detail
-(K-line/资金流/财务), paper trading and backtests:
-
-```powershell
-cd F:\Hermes\ashare-mcp
-.venv\Scripts\python.exe -m streamlit run app.py
-# opens at http://127.0.0.1:8501
-```
-
-## Connect an MCP client
-
-The server speaks MCP over stdio. Example for Claude Desktop / Cursor
-(`claude_desktop_config.json` or `.cursor/mcp.json`):
+Claude Desktop / Cursor（`claude_desktop_config.json` / `.cursor/mcp.json`）：
 
 ```json
 {
@@ -61,56 +57,72 @@ The server speaks MCP over stdio. Example for Claude Desktop / Cursor
 }
 ```
 
-Or after `pip install -e .`, the `ashare-mcp` console script works too:
+或直接跑 git 上的最新版：
 
 ```json
-{ "command": "ashare-mcp", "args": [] }
+{
+  "mcpServers": {
+    "ashare": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/hantrleko/ashare-mcp", "ashare-mcp"]
+    }
+  }
+}
 ```
 
-Claude Code:
+Claude Code：
 
 ```powershell
 claude mcp add ashare -- F:\Hermes\ashare-mcp\.venv\Scripts\python.exe -m ashare_mcp.server
 ```
 
-## Usage examples (what an agent can do)
+## Web 看板
+
+```powershell
+.venv\Scripts\python.exe -m streamlit run app.py   # http://127.0.0.1:8501
+```
+
+四个页面：市场概览（指数/涨跌家数/涨停池）、个股行情（K线+资金流+财务）、
+模拟盘（买卖/持仓/订单）、策略回测（指标+净值曲线+交易明细）。
+
+## 给 agent 的任务示例
 
 - "茅台最近一年的日K线" → `get_kline("600519", "daily", adjust="qfq")`
-- "今天涨停的股票有哪些" → `get_limit_pool(pool="zt")` (last ~30 trading days only)
+- "今天涨停的股票有哪些" → `get_limit_pool(pool="zt")`（近30个交易日）
 - "帮我模拟买入 100 股平安银行" → `paper_buy("000001", 100)`
-- "用5/20日均线叉在贵州茅台上回测2020年以来" → `run_backtest("600519", "ma_cross", {"fast":5,"slow":20}, "2020-01-01")`
+- "用5/20均线在茅台回测2024年以来" → `run_backtest("600519", "ma_cross", {"fast":5,"slow":20}, "20240101")`
 - "茅台的利润表和主要财务指标" → `get_financial_statement` + `get_financial_abstract`
 
-## Notes & limitations
+## 注意事项
 
-- **Symbol format**: `"000001"`, `"sz000001"`, `"000001.SZ"`, `"sh600000"` all OK.
-  Bare 6-digit codes auto-detect market (6→SH, 0/3→SZ, 4/8/92→BJ).
-- **Index vs stock**: `sh000001` = 上证指数; bare `"000001"` = 平安银行 (SZ stock).
-  Use `get_index_kline`/`get_index_quote` for indices.
-- **Realtime quotes** prefer East Money snapshot; on IP rate-limit it falls
-  back to Sina snapshot (slower, fewer fields), then to last daily close.
-- **K-lines** prefer Sina, fall back to East Money `stock_zh_a_hist_em`.
-- **Limit pools** only cover the most recent ~30 trading days (EM limit).
-- **Financial statements** come from Sina (利润表/资产负债表/现金流量表);
-  abstract indicators from EM `stock_financial_analysis_indicator_em`.
-- **Paper trading** is simulated only — no real orders. T+1 enforced via
-  date rollover; fees: commission 0.025% (min ¥5), stamp tax 0.05% sell-side,
-  transfer 0.001%.
-- **Backtest** executes signals at next day's open (no look-ahead),
-  long-only, lot-rounded, with the same fee model.
+- **代码格式**：`"000001"` `"sz000001"` `"000001.SZ"` `"sh600000"` 都认；
+  6位裸码自动识别市场（6→沪、0/3→深、4/8/92→北）。
+- **指数 vs 股票**：`sh000001`=上证指数；裸 `"000001"`=平安银行。
+- **报价降级链**：东财快照 → 新浪1分钟线 → 新浪全市场快照 → 日线收盘；
+  响应里都标 `source`/`note`，兜底数据不是实时会注明。
+- **K线**：新浪优先、东财 `stock_zh_a_hist_em` 兜底（含限流冷却）。
+- **涨停池**：只覆盖最近约30个交易日（东财接口限制）。
+- **模拟盘**：纯模拟，不下真实订单。T+1 通过日期滚动实现。
+- **回测**：做多、lot取整、最小交易额死区跳过碎单（清仓除外）。
 
-## Project layout
+## 项目结构
 
 ```
+app.py                    # Streamlit 看板
+scripts/build_page.py     # 生成 docs/index.html（GitHub Pages 快照页）
+docs/index.html           # 静态展示页（每日自动刷新）
+.github/workflows/        # refresh-page.yml 定时重建
 src/ashare_mcp/
-├── server.py          # FastMCP entry, 19 tools
-├── config.py          # env config, data dir
-├── utils.py           # symbol/date normalization, resample
-├── data/
-│   ├── facade.py      # provider router (akshare → tushare)
-│   ├── akshare_data.py
-│   └── tushare_data.py
-├── trading/paper.py   # paper account engine (JSON state)
-└── backtest/engine.py # daily-bar backtester
-data/                  # paper_account.json (gitignored)
+├── server.py             # FastMCP 入口，19 个工具
+├── config.py             # env 配置、数据目录
+├── utils.py              # 代码/日期归一化、重采样
+├── data/                 # facade + akshare + tushare
+├── trading/paper.py      # 模拟盘引擎（JSON 状态）
+└── backtest/engine.py    # 日线回测器
+data/paper_account.json   # 模拟盘状态（gitignored）
 ```
+
+## Disclaimer
+
+仅供研究与模拟交易，不构成投资建议。数据来自新浪/东方财富/同花顺公开
+接口，时效性与准确性以源站为准。
