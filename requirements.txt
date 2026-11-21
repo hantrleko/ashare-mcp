@@ -1,0 +1,3 @@
+# Streamlit Community Cloud installs this file; -e . pulls in the
+# package itself plus all dependencies declared in pyproject.toml.
+-e .
