@@ -4,7 +4,7 @@ startCommand:
   commandFunction: |-
     (config) => ({
       command: 'uvx',
-      args: ['--from', 'git+https://github.com/hantrleko/ashare-mcp', 'a-share-mcp'],
+      args: ['--from', 'git+https://github.com/hantrleko/ashare-mcp', 'ashare-mcp-server'],
       env: config.tushareToken ? { TUSHARE_TOKEN: config.tushareToken } : {}
     })
   configSchema: |-
