@@ -532,3 +532,107 @@ def get_financial_statement(symbol: str, statement: str = "income",
     df = ak.stock_financial_report_sina(
         symbol=sina_symbol(code6, mkt), indicator=cn)
     return df_records(df, limit=max(1, min(int(limit), 40)))
+
+
+# ---------------- events & factors ----------------
+
+_CAL_TTL = 24 * 3600.0
+_EARNINGS_FUNCS = {
+    "yjbb": "stock_yjbb_em",   # 业绩报表 (年报/季报实际披露数据)
+    "yjyg": "stock_yjyg_em",   # 业绩预告
+    "yysj": "stock_yysj_em",   # 业绩快报
+}
+
+
+def get_earnings_calendar(report_date: str = "", kind: str = "yjbb",
+                          limit: int = 300) -> list[dict[str, Any]]:
+    """Earnings reports for a quarter-end report date (YYYYMMDD, e.g. 20250930).
+
+    kind: "yjbb" 业绩报表 | "yjyg" 业绩预告 | "yysj" 业绩快报.
+    Note: full-market crawl (~30-60 s); results cached for 24 h.
+    """
+    fn_name = _EARNINGS_FUNCS.get(kind)
+    if fn_name is None:
+        raise ValueError(f"kind must be one of {sorted(_EARNINGS_FUNCS)}")
+    d = normalize_date(report_date, "20250930")
+    df = _cached(f"earn_{kind}_{d}", _CAL_TTL,
+                 lambda: getattr(ak, fn_name)(date=d))
+    return df_records(df, limit=max(1, min(int(limit), 2000)))
+
+
+_NOTICE_COLS = {
+    "代码": "code", "名称": "name", "公告标题": "title",
+    "公告类型": "type", "发布时间": "published_at", "地址": "url",
+    "公告日期": "published_at",
+}
+
+
+def get_announcements(symbol: str = "", date_str: str = "",
+                      limit: int = 100) -> list[dict[str, Any]]:
+    """Exchange announcements for a single trading day (or one stock)."""
+    d = normalize_date(date_str, date.today().strftime("%Y%m%d"))
+    df = ak.stock_notice_report(symbol="全部", date=d)
+    df = df.rename(columns={k: v for k, v in _NOTICE_COLS.items()
+                            if k in df.columns})
+    if symbol.strip():
+        code6, _ = normalize_symbol(symbol)
+        code_col = next((c for c in df.columns if "code" in str(c).lower()
+                         or "代码" in str(c)), None)
+        if code_col is not None:
+            df = df[df[code_col].astype(str).str.contains(code6)]
+    return df_records(df, limit=max(1, min(int(limit), 500)))
+
+
+def get_factor_snapshot(symbol: str, days: int = 250) -> dict[str, Any]:
+    """Quick factor snapshot from daily bars: momentum, volatility,
+    MA position, turnover, and beta vs CSI-300."""
+    code6, _ = normalize_symbol(symbol)
+    days = max(60, min(int(days), 750))
+    sd = (date.today() - pd.Timedelta(days=int(days * 1.8))).strftime("%Y%m%d")
+    ed = date.today().strftime("%Y%m%d")
+    df, _src = _kline_daily(symbol, sd, ed, "qfq")
+    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    df = df.sort_values("date").tail(days).reset_index(drop=True)
+    for c in ("open", "high", "low", "close", "volume", "amount", "turnover",
+              "amplitude"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    close = df["close"]
+    ret = close.pct_change()
+
+    def _ret(n: int) -> float | None:
+        if len(close) <= n:
+            return None
+        return round(float(close.iloc[-1] / close.iloc[-n - 1] - 1), 4)
+
+    out: dict[str, Any] = {
+        "code": code6, "name": _name_of(code6), "bars": len(df),
+        "last_close": round(float(close.iloc[-1]), 3),
+        "ret_20d": _ret(20), "ret_60d": _ret(60), "ret_120d": _ret(120),
+        "vol_20d_ann": round(float(ret.tail(20).std() * np.sqrt(252)), 4)
+        if len(ret.dropna()) >= 15 else None,
+        "avg_turnover_20d": round(float(df["turnover"].tail(20).mean()), 3)
+        if "turnover" in df.columns else None,
+        "avg_amplitude_20d": round(float(df["amplitude"].tail(20).mean()), 3)
+        if "amplitude" in df.columns else None,
+    }
+    for w in (5, 20, 60, 120):
+        if len(close) >= w:
+            ma = float(close.rolling(w).mean().iloc[-1])
+            out[f"ma{w}"] = round(ma, 3)
+            out[f"vs_ma{w}_pct"] = round((float(close.iloc[-1]) / ma - 1) * 100, 2)
+
+    # beta vs CSI-300 over last ~120 aligned days
+    try:
+        idx = ak.index_zh_daily_sina(symbol="sh000300")
+        idx["date"] = pd.to_datetime(idx["date"]).dt.strftime("%Y-%m-%d")
+        m = df.merge(idx[["date", "close"]], on="date", suffixes=("", "_idx"))
+        if len(m) > 60:
+            m = m.tail(120)
+            rs = m["close"].pct_change().dropna()
+            ri = m["close_idx"].pct_change().dropna()
+            if len(rs) > 30 and float(ri.var()) > 0:
+                out["beta_120d"] = round(float(rs.cov(ri) / ri.var()), 3)
+    except Exception:
+        pass
+    return out

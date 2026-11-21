@@ -159,6 +159,25 @@ def page_overview() -> None:
             st.caption(f"数据源: {src}")
 
     st.divider()
+    st.subheader("业绩日历")
+    st.caption("按报告期查全市场业绩披露（首次爬取30–60秒，缓存24小时）")
+    c1, c2 = st.columns(2)
+    rpt = c1.text_input("报告期（季末 YYYYMMDD，如 20250930）", "20250930")
+    kind = c2.selectbox("类型", ["yjbb", "yjyg", "yysj"],
+                        format_func=lambda k: {"yjbb": "业绩报表", "yjyg": "业绩预告",
+                                               "yysj": "业绩快报"}[k])
+    if st.button("加载业绩数据", key="earn_btn"):
+        with st.spinner("爬取全市场业绩数据…"):
+            try:
+                items, src = _call("get_earnings_calendar", rpt.strip(),
+                                   kind, 500)
+                st.caption(f"{len(items)} 条 · 数据源 {src}")
+                st.dataframe(pd.DataFrame(items), use_container_width=True,
+                             height=420)
+            except Exception as e:
+                _err_box(e)
+
+    st.divider()
     st.subheader("涨跌停池")
     pool_map = {"涨停": "zt", "跌停": "dt", "炸板": "zb", "强势股": "strong",
                 "昨涨停今表现": "prev", "次新股": "new"}
@@ -205,8 +224,8 @@ def page_stock() -> None:
         cap += f" · {quote['date']}"
     st.caption(cap)
 
-    tab_k, tab_flow, tab_fin, tab_stmt = st.tabs(
-        ["K线", "资金流向", "财务指标", "三大报表"])
+    tab_k, tab_flow, tab_fin, tab_stmt, tab_factor, tab_ann = st.tabs(
+        ["K线", "资金流向", "财务指标", "三大报表", "因子快照", "公告"])
 
     with tab_k:
         c1, c2, c3 = st.columns(3)
@@ -265,6 +284,40 @@ def page_stock() -> None:
             except Exception as e:
                 _err_box(e)
 
+    with tab_factor:
+        with st.spinner("计算因子…"):
+            try:
+                fac, fsrc = _call_hist("get_factor_snapshot", code, 250)
+            except Exception as e:
+                _err_box(e)
+                fac = None
+        if fac:
+            fm = st.columns(5)
+            fm[0].metric("20日收益", _pct(fac.get("ret_20d") and fac["ret_20d"] * 100).replace("+", "") if fac.get("ret_20d") is not None else "—")
+            fm[1].metric("60日收益", f"{fac['ret_60d'] * 100:+.2f}%" if fac.get("ret_60d") is not None else "—")
+            fm[2].metric("120日收益", f"{fac['ret_120d'] * 100:+.2f}%" if fac.get("ret_120d") is not None else "—")
+            fm[3].metric("年化波动(20d)", f"{fac['vol_20d_ann'] * 100:.1f}%" if fac.get("vol_20d_ann") is not None else "—")
+            fm[4].metric("Beta(120d vs沪深300)", fac.get("beta_120d", "—"))
+            fm2 = st.columns(5)
+            for col, k in zip(fm2, ("ma5", "ma20", "ma60", "ma120")):
+                if fac.get(f"vs_{k}_pct") is not None:
+                    col.metric(f"vs {k.upper()}", f"{fac[f'vs_{k}_pct']:+.2f}%")
+            if fac.get("avg_turnover_20d") is not None:
+                fm2[4].metric("20日平均换手", f"{fac['avg_turnover_20d']:.2f}%")
+            st.caption(f"数据源 {fsrc} · {fac.get('bars')} 根K线")
+
+    with tab_ann:
+        ann_day = st.text_input("日期（YYYYMMDD，留空=今天）", "", key="ann_day")
+        if st.button("查询公告", key="ann_btn"):
+            with st.spinner("查询公告…"):
+                try:
+                    items, src = _call("get_announcements", code,
+                                       ann_day.strip(), 50)
+                    st.caption(f"{len(items)} 条 · 数据源 {src}")
+                    st.dataframe(pd.DataFrame(items), use_container_width=True)
+                except Exception as e:
+                    _err_box(e)
+
 
 def page_paper() -> None:
     st.header("模拟盘")
@@ -310,6 +363,42 @@ def page_paper() -> None:
     m3.metric("持仓市值", f"{stt['market_value']:,.0f}")
     m4.metric("总盈亏", f"{stt['total_pnl']:+,.0f}")
     m5.metric("持仓数", stt["position_count"])
+
+    st.subheader("条件单")
+    with st.form("trigger_form"):
+        t1, t2, t3, t4, t5 = st.columns(5)
+        t_sym = t1.text_input("代码 ", "", placeholder="600519")
+        t_side = t2.selectbox("方向", ["buy", "sell"],
+                              format_func=lambda s: "买入" if s == "buy" else "卖出")
+        t_shares = t3.number_input("股数  ", min_value=100, value=100, step=100)
+        t_cond = t4.selectbox("条件", [">=", "<="],
+                              format_func=lambda c: "价格 ≥ 触发价" if c == ">=" else "价格 ≤ 触发价")
+        t_price = t5.number_input("触发价", min_value=0.01, value=10.0, step=0.01)
+        if st.form_submit_button("添加条件单"):
+            try:
+                tr = acct.add_trigger(t_sym.strip(), t_side, int(t_shares),
+                                      float(t_price), t_cond)
+                st.success(f"已添加 #{tr['id']}：{tr['symbol']} {t_side} "
+                           f"{tr['shares']}股 @ {t_cond} {tr['trigger_price']}")
+            except Exception as e:
+                st.error(f"添加失败：{e}")
+    col_t1, col_t2 = st.columns([1, 4])
+    if col_t1.button("立即评估触发", key="check_trg"):
+        with st.spinner("检查行情…"):
+            res = acct.check_triggers()
+            st.caption(f"待触发 {res['pending']} 个")
+    trg_id = col_t2.text_input("取消条件单（输入id）", "", placeholder="id")
+    if col_t2.button("取消", key="cancel_trg") and trg_id.strip():
+        try:
+            acct.cancel_trigger(trg_id.strip())
+            st.success(f"已取消 {trg_id.strip()}")
+        except Exception as e:
+            st.error(f"取消失败：{e}")
+    trigs = acct.triggers()
+    if trigs:
+        st.dataframe(pd.DataFrame(trigs), use_container_width=True)
+    else:
+        st.info("暂无条件单（查看持仓/资产时会自动评估触发）")
 
     st.subheader("持仓")
     pos = acct.positions()

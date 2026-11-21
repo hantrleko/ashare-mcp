@@ -56,6 +56,7 @@ class PaperAccount:
             "last_date": date.today().isoformat(),
             "positions": {},
             "orders": [],
+            "triggers": [],
         }
 
     def _load(self) -> dict[str, Any] | None:
@@ -70,6 +71,12 @@ class PaperAccount:
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.state, ensure_ascii=False, indent=1),
                        encoding="utf-8")
+        for _ in range(5):  # Windows: Defender can briefly hold the file
+            try:
+                os.replace(tmp, self.path)
+                return
+            except PermissionError:
+                time.sleep(0.05)
         os.replace(tmp, self.path)
 
     # ---------- helpers ----------
@@ -127,6 +134,88 @@ class PaperAccount:
         self.state["orders"].append(order)
         if len(self.state["orders"]) > MAX_ORDERS:
             self.state["orders"] = self.state["orders"][-MAX_ORDERS:]
+
+    # ---------- conditional (trigger) orders ----------
+
+    def _eval_triggers(self) -> None:
+        """Fill pending triggers whose price condition is met.
+
+        Marked 'filling' before executing so a nested buy/sell re-entering
+        this loop cannot fire the same trigger twice.
+        """
+        for t in self.state.get("triggers", []):
+            if t.get("status") != "pending":
+                continue
+            try:
+                px, _, _ = self._quote(t["symbol"])
+            except Exception:
+                continue
+            hit = px >= t["trigger_price"] if t["condition"] == ">=" \
+                else px <= t["trigger_price"]
+            if not hit:
+                continue
+            t["status"] = "filling"
+            try:
+                fn = self.buy if t["side"] == "buy" else self.sell
+                res = fn(t["symbol"], t["shares"])
+                t["status"] = "filled"
+                t["filled_price"] = res["price"]
+                t["filled_at"] = datetime.now().isoformat(timespec="seconds")
+            except Exception as e:
+                t["status"] = "failed"
+                t["error"] = str(e)
+        if self.state.get("triggers"):
+            self._save()
+
+    def add_trigger(self, symbol: str, side: str, shares: int,
+                    trigger_price: float, condition: str = ">=",
+                    note: str = "") -> dict[str, Any]:
+        self._rollover()
+        if side not in ("buy", "sell"):
+            raise ValueError("side must be buy|sell")
+        if condition not in (">=", "<="):
+            raise ValueError("condition must be '>=' or '<='")
+        shares = int(shares)
+        if shares <= 0 or shares % LOT != 0:
+            raise ValueError("shares must be a positive multiple of 100")
+        if float(trigger_price) <= 0:
+            raise ValueError("trigger_price must be positive")
+        code6, _ = normalize_symbol(symbol)
+        trig = {
+            "id": uuid.uuid4().hex[:8],
+            "symbol": code6,
+            "side": side,
+            "shares": shares,
+            "condition": condition,
+            "trigger_price": float(trigger_price),
+            "note": note,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "status": "pending",
+        }
+        self.state.setdefault("triggers", []).append(trig)
+        self._save()
+        return trig
+
+    def cancel_trigger(self, trigger_id: str) -> dict[str, Any]:
+        for t in self.state.get("triggers", []):
+            if t["id"] == trigger_id:
+                if t["status"] != "pending":
+                    raise RuntimeError(
+                        f"trigger {trigger_id} is {t['status']}, not pending")
+                t["status"] = "cancelled"
+                self._save()
+                return t
+        raise KeyError(f"no pending trigger {trigger_id}")
+
+    def triggers(self) -> list[dict[str, Any]]:
+        return list(reversed(self.state.get("triggers", [])))
+
+    def check_triggers(self) -> dict[str, Any]:
+        self._rollover()
+        self._eval_triggers()
+        pending = sum(1 for t in self.state.get("triggers", [])
+                      if t["status"] == "pending")
+        return {"triggers": self.triggers(), "pending": pending}
 
     # ---------- account ----------
 
@@ -241,6 +330,7 @@ class PaperAccount:
 
     def status(self) -> dict[str, Any]:
         self._rollover()
+        self._eval_triggers()
         rows, mv = self._mark_positions()
         equity = round(self.state["cash"] + mv, 2)
         init = self.state["initial_capital"]
@@ -256,6 +346,7 @@ class PaperAccount:
 
     def positions(self) -> list[dict[str, Any]]:
         self._rollover()
+        self._eval_triggers()
         rows, _ = self._mark_positions()
         return rows
 

@@ -1,0 +1,26 @@
+name: Release
+
+# Publishes to PyPI when a GitHub Release is created.
+# Requires a Trusted Publisher configured on pypi.org:
+#   owner=hantrleko  repo=ashare-mcp  workflow=release.yml  environment=pypi
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write   # OIDC for PyPI trusted publishing — no token needed
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist + wheel
+        run: |
+          pip install uv
+          uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1

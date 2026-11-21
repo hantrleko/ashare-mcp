@@ -2,6 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white)](https://github.com/hantrleko/ashare-mcp)
 [![MCP](https://img.shields.io/badge/MCP-stdio-7b7ff2)](https://modelcontextprotocol.io)
+[![CI](https://github.com/hantrleko/ashare-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/hantrleko/ashare-mcp/actions)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Demo Page](https://img.shields.io/badge/demo-GitHub%20Pages-orange)](https://hantrleko.github.io/ashare-mcp/)
 
@@ -23,10 +24,14 @@ fallback with rate-limit cooldown), **tushare** automatic fallback when
 | 模块 | MCP 工具 | 说明 |
 |---|---|---|
 | 行情数据 | `search_stock` `get_quote` `get_quotes` `get_kline` `get_index_quote` `get_index_kline` `get_market_overview` `get_limit_pool` `get_money_flow` | 搜索/实时报价/日周月K/指数/涨跌家数/涨停跌停池/主力资金流 |
+| 事件与因子 | `get_earnings_calendar` `get_announcements` `get_factor_snapshot` | 业绩报表/预告/快报、公告查询、动量/波动/Beta/均线位置因子快照 |
 | 财务基本面 | `get_financial_abstract` `get_financial_statement` | 财务指标摘要 + 利润表/资产负债表/现金流量表 |
 | 模拟盘 | `paper_status` `paper_buy` `paper_sell` `paper_positions` `paper_orders` `paper_reset` | 1手=100股、T+1、±10/20/30/5%涨跌停、佣金万2.5+印花税万5+过户费万0.1，JSON持久化 |
+| 条件单 | `paper_add_trigger` `paper_triggers` `paper_cancel_trigger` `paper_check_triggers` | 触发价买卖（突破/止损/低吸），查账户时自动评估成交 |
 | 策略回测 | `run_backtest` | `ma_cross`/`momentum`/`grid`/`buy_hold`，信号收盘产生、次日开盘成交，无未来函数 |
 | 数据源 | `provider_status` | akshare 主源状态、tushare token 配置检查 |
+
+共 **26 个工具**。
 
 ## 安装
 
@@ -82,14 +87,19 @@ claude mcp add ashare -- F:\Hermes\ashare-mcp\.venv\Scripts\python.exe -m ashare
 .venv\Scripts\python.exe -m streamlit run app.py   # http://127.0.0.1:8501
 ```
 
-四个页面：市场概览（指数/涨跌家数/涨停池）、个股行情（K线+资金流+财务）、
-模拟盘（买卖/持仓/订单）、策略回测（指标+净值曲线+交易明细）。
+四个页面：市场概览（指数/涨跌家数/涨停池/业绩日历）、个股行情
+（K线+资金流+财务+因子快照+公告）、模拟盘（买卖/条件单/持仓/订单）、
+策略回测（指标+净值曲线+交易明细）。
 
 ## 给 agent 的任务示例
 
 - "茅台最近一年的日K线" → `get_kline("600519", "daily", adjust="qfq")`
 - "今天涨停的股票有哪些" → `get_limit_pool(pool="zt")`（近30个交易日）
 - "帮我模拟买入 100 股平安银行" → `paper_buy("000001", 100)`
+- "茅台跌到 1400 以下帮我买 100 股" → `paper_add_trigger("600519","buy",100,1400,"<=")`
+- "今年三季报谁的营收增速最快" → `get_earnings_calendar("20250930","yjbb")`
+- "茅台今天发了什么公告" → `get_announcements("600519")`
+- "平安银行的动量和波动率因子" → `get_factor_snapshot("000001")`
 - "用5/20均线在茅台回测2024年以来" → `run_backtest("600519", "ma_cross", {"fast":5,"slow":20}, "20240101")`
 - "茅台的利润表和主要财务指标" → `get_financial_statement` + `get_financial_abstract`
 

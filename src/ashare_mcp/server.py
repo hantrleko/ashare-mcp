@@ -170,6 +170,54 @@ def get_money_flow(symbol: str, days: int = 20) -> dict[str, Any]:
         return _err(e)
 
 
+@mcp.tool()
+def get_earnings_calendar(report_date: str = "", kind: str = "yjbb",
+                          limit: int = 300) -> dict[str, Any]:
+    """Earnings calendar for a quarter-end report date.
+
+    - report_date: quarter end YYYYMMDD (e.g. 20250930); empty = latest Q3
+    - kind: "yjbb" 业绩报表(正式披露) | "yjyg" 业绩预告 | "yysj" 业绩快报
+    Returns EPS, revenue/profit YoY growth, ROE, margin, industry, and the
+    latest announcement date for every A-share that reported.
+    Note: first call per period crawls ~30-60s; cached 24h.
+    """
+    try:
+        res, src = market_data.call("get_earnings_calendar",
+                                    report_date, kind, limit)
+        return {"source": src, "kind": kind, "count": len(res), "items": res}
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def get_announcements(symbol: str = "", date_str: str = "",
+                      limit: int = 100) -> dict[str, Any]:
+    """Exchange announcements: a whole trading day, or filtered to one stock.
+
+    - date_str: YYYYMMDD or YYYY-MM-DD, empty = today
+    - symbol: optional 6-digit code to filter
+    Returns title/type/publish time/url per announcement.
+    """
+    try:
+        res, src = market_data.call("get_announcements",
+                                    symbol, date_str, limit)
+        return {"source": src, "count": len(res), "items": res}
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def get_factor_snapshot(symbol: str, days: int = 250) -> dict[str, Any]:
+    """Factor snapshot from daily bars: 20/60/120d momentum returns,
+    20d annualized volatility, MA5/20/60/120 distance, avg turnover &
+    amplitude, and 120d beta vs CSI-300."""
+    try:
+        res, src = market_data.call("get_factor_snapshot", symbol, days)
+        return _wrap(res, src)
+    except Exception as e:
+        return _err(e)
+
+
 # ---------------- fundamentals ----------------
 
 @mcp.tool()
@@ -257,6 +305,55 @@ def paper_reset(capital: float = 1_000_000.0) -> dict[str, Any]:
     """Reset the paper account to a fresh state with given starting capital (CNY)."""
     try:
         return _acct().reset(capital)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def paper_add_trigger(symbol: str, side: str, shares: int,
+                      trigger_price: float, condition: str = ">=",
+                      note: str = "") -> dict[str, Any]:
+    """Add a conditional (trigger) order to the paper account.
+
+    - side: "buy" | "sell"; shares in lots of 100
+    - condition ">=" fires when price >= trigger_price (breakout/stop-gain);
+      "<=" fires when price <= trigger_price (dip-buy/stop-loss)
+    Triggers are evaluated whenever the account is queried
+    (status/positions/check_triggers). Fills go through the normal
+    buy/sell path — T+1, price limits and fees still apply.
+    """
+    try:
+        return _acct().add_trigger(symbol, side, shares,
+                                   trigger_price, condition, note)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def paper_triggers() -> dict[str, Any]:
+    """List all conditional orders (newest first) with status:
+    pending | filled | failed | cancelled."""
+    try:
+        return {"triggers": _acct().triggers()}
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def paper_cancel_trigger(trigger_id: str) -> dict[str, Any]:
+    """Cancel a pending conditional order by its id."""
+    try:
+        return _acct().cancel_trigger(trigger_id)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def paper_check_triggers() -> dict[str, Any]:
+    """Evaluate all pending conditional orders against latest quotes now.
+    Returns the full trigger list and remaining pending count."""
+    try:
+        return _acct().check_triggers()
     except Exception as e:
         return _err(e)
 

@@ -1,0 +1,23 @@
+# Smithery.ai deployment config — https://smithery.ai
+startCommand:
+  type: stdio
+  commandFunction: |-
+    (config) => ({
+      command: 'uvx',
+      args: ['--from', 'git+https://github.com/hantrleko/ashare-mcp', 'ashare-mcp'],
+      env: config.tushareToken ? { TUSHARE_TOKEN: config.tushareToken } : {}
+    })
+  configSchema: |-
+    {
+      "type": "object",
+      "properties": {
+        "tushareToken": {
+          "type": "string",
+          "title": "TuShare token (optional fallback provider)",
+          "description": "Free token from https://tushare.pro — enables the tushare fallback data source."
+        }
+      },
+      "required": []
+    }
+  exampleConfig:
+    tushareToken: ""

@@ -133,6 +133,8 @@ def run_backtest(symbol: str, strategy: str = "ma_cross",
 
     weight = _BUILDERS[strategy](df, params)
     slip = float(slippage_bps) / 10000.0
+    # buy_hold = enter once, never rebalance; the deadband skips all dust trades
+    mtv = float("inf") if strategy == "buy_hold" else float(min_trade_value)
 
     cash = float(capital)
     shares = 0
@@ -159,8 +161,9 @@ def run_backtest(symbol: str, strategy: str = "ma_cross",
         diff = target_shares - shares
         if diff == 0:
             continue
-        # deadband: skip dust trades, but always allow full exit (target 0)
-        if target_shares != 0 and abs(diff) * px < min_trade_value:
+        # deadband: skip dust trades; always allow entering from flat
+        # and full exit (target 0)
+        if target_shares != 0 and shares != 0 and abs(diff) * px < mtv:
             continue
 
         if diff > 0:  # buy

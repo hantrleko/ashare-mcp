@@ -95,7 +95,7 @@ def limit_pct_for(code6: str, name: str = "") -> float:
         return 0.05
     if code6.startswith(("30", "68")):
         return 0.20  # ChiNext / STAR
-    if code6.startswith(("8", "4")):
+    if code6.startswith(("8", "4", "92")):
         return 0.30  # Beijing SE
     return 0.10
 
