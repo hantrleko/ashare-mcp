@@ -22,4 +22,4 @@ jobs:
       - name: Unit tests (offline)
         run: pytest -q tests/
       - name: MCP tools smoke
-        run: python -c "import asyncio; from ashare_mcp.server import mcp; t=asyncio.run(mcp.get_tools()); print(len(t), 'tools')"
+        run: python -c "import asyncio; from ashare_mcp.server import mcp; t=asyncio.run(mcp.list_tools()); print(len(t), 'tools')"
