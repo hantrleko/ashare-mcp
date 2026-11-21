@@ -57,6 +57,7 @@ class PaperAccount:
             "positions": {},
             "orders": [],
             "triggers": [],
+            "history": [],
         }
 
     def _load(self) -> dict[str, Any] | None:
@@ -333,6 +334,7 @@ class PaperAccount:
         self._eval_triggers()
         rows, mv = self._mark_positions()
         equity = round(self.state["cash"] + mv, 2)
+        self._record_equity(equity)
         init = self.state["initial_capital"]
         return {
             "cash": self.state["cash"],
@@ -343,6 +345,22 @@ class PaperAccount:
             "total_return_pct": round((equity / init - 1) * 100, 2) if init else None,
             "position_count": len(rows),
         }
+
+    def _record_equity(self, equity: float) -> None:
+        """Upsert today's equity into the daily history (capped at 1000)."""
+        hist = self.state.setdefault("history", [])
+        today = date.today().isoformat()
+        entry = {"date": today, "equity": equity}
+        if hist and hist[-1].get("date") == today:
+            hist[-1] = entry
+        else:
+            hist.append(entry)
+        if len(hist) > 1000:
+            del hist[:-1000]
+        self._save()
+
+    def history(self) -> list[dict[str, Any]]:
+        return list(self.state.get("history", []))
 
     def positions(self) -> list[dict[str, Any]]:
         self._rollover()

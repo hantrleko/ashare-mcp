@@ -206,7 +206,7 @@ footer{{border-top:1px solid var(--line);margin-top:56px;padding:28px 0;color:va
 
 
 def main() -> None:
-    demo_url = "https://july-durable-santa-monitoring.trycloudflare.com"
+    demo_url = "https://modems-brick-mind-legs.trycloudflare.com"
     print("fetching index quotes…")
     idx = index_cards()
     print("fetching kline 600519…")

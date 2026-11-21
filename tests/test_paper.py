@@ -92,3 +92,26 @@ def test_reset_clears(acct):
     assert acct.state["positions"] == {}
     assert acct.state["orders"] == []
     assert acct.state["triggers"] == []
+
+
+def test_equity_history_upsert(acct):
+    acct.buy("600519", 100)
+    st = acct.status()
+    hist = acct.history()
+    assert len(hist) == 1
+    assert hist[0]["equity"] == st["equity"]
+    # second status() on the same day replaces, not appends
+    acct.status()
+    assert len(acct.history()) == 1
+    # a new day appends
+    acct.state["history"][0]["date"] = "2000-01-01"
+    acct.status()
+    assert len(acct.history()) == 2
+
+
+def test_history_survives_old_state_file(acct, tmp_path):
+    # state files written before the history feature lack the key
+    del acct.state["history"]
+    acct._save()
+    st = acct.status()  # setdefault path, must not raise
+    assert acct.history()[-1]["equity"] == st["equity"]

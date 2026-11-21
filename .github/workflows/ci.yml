@@ -18,7 +18,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install
-        run: pip install -e . pytest
+        run: pip install -e ".[web]" pytest
       - name: Unit tests (offline)
         run: pytest -q tests/
       - name: MCP tools smoke

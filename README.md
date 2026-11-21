@@ -94,7 +94,36 @@ Claude Code：
 claude mcp add ashare -- F:\Hermes\ashare-mcp\.venv\Scripts\python.exe -m ashare_mcp.server
 ```
 
-## Web 看板
+## Web 前端
+
+主 UI：React + Vite + Tailwind + lightweight-charts，券商终端风格
+（深色主题、红涨绿跌），后端是 `ashare_mcp.web` 里的 FastAPI
+（`/api/*` + 静态托管构建产物）。
+
+```powershell
+# 一次性：安装 web 扩展并构建前端
+uv pip install --python .venv\Scripts\python.exe -e ".[web]"
+cd web; npm ci; npm run build; cd ..
+
+# 运行（同时提供 /api 和前端页面）
+.venv\Scripts\python.exe -m ashare_mcp.web     # http://127.0.0.1:8600
+```
+
+开发模式（前端热更新，`/api` 代理到 8600）：
+
+```powershell
+cd web; npm run dev   # http://127.0.0.1:5173
+```
+
+五个页面：首页（九大指数/自选股/账户摘要/市场广度）、个股
+（专业K线+MA/MACD/RSI/BOLL+资金流+财务+因子+公告+快捷交易）、
+模拟盘（净值曲线/持仓/订单/条件单/重置）、回测（策略vs买入持有+
+交易标记）、市场（涨跌停池/业绩日历/全市场公告）。
+
+环境变量：`ASHARE_WEB_HOST`（默认 127.0.0.1）、`ASHARE_WEB_PORT`
+（默认 8600）、`ASHARE_WEB_DIST`（默认 `<repo>/web/dist`）。
+
+## Streamlit 看板（轻量旧版）
 
 ```powershell
 .venv\Scripts\python.exe -m streamlit run app.py   # http://127.0.0.1:8501
@@ -102,7 +131,7 @@ claude mcp add ashare -- F:\Hermes\ashare-mcp\.venv\Scripts\python.exe -m ashare
 
 四个页面：市场概览（指数/涨跌家数/涨停池/业绩日历）、个股行情
 （K线+资金流+财务+因子快照+公告）、模拟盘（买卖/条件单/持仓/订单）、
-策略回测（指标+净值曲线+交易明细）。
+策略回测（指标+净值曲线+交易明细）。保留为轻量备用 UI。
 
 ## 给 agent 的任务示例
 
@@ -131,7 +160,8 @@ claude mcp add ashare -- F:\Hermes\ashare-mcp\.venv\Scripts\python.exe -m ashare
 ## 项目结构
 
 ```
-app.py                    # Streamlit 看板
+app.py                    # Streamlit 看板（轻量旧版）
+web/                      # React+Vite 前端（npm run build -> web/dist）
 scripts/build_page.py     # 生成 docs/index.html（GitHub Pages 快照页）
 docs/index.html           # 静态展示页（每日自动刷新）
 .github/workflows/        # refresh-page.yml 定时重建
@@ -141,7 +171,8 @@ src/ashare_mcp/
 ├── utils.py              # 代码/日期归一化、重采样
 ├── data/                 # facade + akshare + tushare
 ├── trading/paper.py      # 模拟盘引擎（JSON 状态）
-└── backtest/engine.py    # 日线回测器
+├── backtest/engine.py    # 日线回测器
+└── web/                  # FastAPI 后端（/api + SPA 静态托管）
 data/paper_account.json   # 模拟盘状态（gitignored）
 ```
 

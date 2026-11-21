@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import akshare as ak
@@ -200,8 +201,26 @@ def _index_spot_df() -> pd.DataFrame:
     return _cached("index_spot", _INDEX_TTL, _load_index_spot)
 
 
+def _bundled_stock_list() -> pd.DataFrame:
+    """Snapshot shipped inside the package (built by scripts/build_stock_list.py)."""
+    path = Path(__file__).resolve().parent / "stock_list.csv"
+    if not path.exists():
+        return pd.DataFrame(columns=["code6", "name", "market"])
+    df = pd.read_csv(path, dtype=str)
+    df = df.dropna(subset=["code6"])
+    df["code6"] = df["code6"].str[-6:]
+    df["market"] = df["code6"].map(_market_of)
+    return df[["code6", "name", "market"]]
+
+
 def _load_stock_list() -> pd.DataFrame:
-    """All A-shares -> columns code6/name/market."""
+    """All A-shares -> columns code6/name/market.
+
+    Union of whatever live sources succeed and the bundled snapshot:
+    live rows win on name, the snapshot fills in codes the live sources
+    missed (e.g. when the SSE endpoint is unreachable).
+    """
+    live: list[pd.DataFrame] = []
     try:
         df = ak.stock_info_a_code_name()
         code_col = next((c for c in ("A股代码", "证券代码", "代码") if c in df.columns), None)
@@ -213,31 +232,42 @@ def _load_stock_list() -> pd.DataFrame:
             out = pd.DataFrame({
                 "code6": df[code_col].astype(str).str.replace(r"\D", "", regex=True).str[-6:],
                 "name": df[name_col].astype(str),
+                "market": "",
             })
-            out["market"] = out["code6"].map(_market_of)
-            return out.drop_duplicates("code6").reset_index(drop=True)
+            live.append(out)
     except Exception:
         pass
-    # fallback: per-exchange lists
-    frames = []
+    # per-exchange lists fill any market the combined list missed
+    have = set()
+    if live:
+        have = set(live[0]["code6"].map(_market_of).unique())
     for fn, c_col, n_col, mkt in (
         ("stock_info_sh_name_code", "证券代码", "证券简称", "sh"),
         ("stock_info_sz_name_code", "A股代码", "A股简称", "sz"),
         ("stock_info_bj_name_code", "证券代码", "证券简称", "bj"),
     ):
+        if mkt in have:
+            continue
         try:
             d = getattr(ak, fn)()
             if c_col in d.columns and n_col in d.columns:
-                frames.append(pd.DataFrame({
+                live.append(pd.DataFrame({
                     "code6": d[c_col].astype(str).str.replace(r"\D", "", regex=True).str[-6:],
                     "name": d[n_col].astype(str),
                     "market": mkt,
                 }))
         except Exception:
             continue
+
+    snap = _bundled_stock_list()
+    frames = live + ([snap] if len(snap) else [])
     if not frames:
         raise RuntimeError("stock list unavailable")
-    return pd.concat(frames, ignore_index=True).drop_duplicates("code6")
+    out = pd.concat(frames, ignore_index=True).dropna(subset=["code6", "name"])
+    # live rows first -> keep="first" gives live precedence on dedupe
+    out = out.drop_duplicates("code6", keep="first")
+    out["market"] = out["code6"].map(_market_of)
+    return out.reset_index(drop=True)
 
 
 def _stock_list_df() -> pd.DataFrame:

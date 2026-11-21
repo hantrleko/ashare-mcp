@@ -13,3 +13,8 @@ inspector-config.json
 # Local tooling binaries (cloudflared etc.)
 tools/
 dist/
+
+# Web frontend
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo

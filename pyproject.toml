@@ -1,6 +1,6 @@
 [project]
 name = "ashare-mcp-server"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for A-share market data, paper trading, backtesting and fundamentals (akshare + tushare)"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,8 +13,12 @@ dependencies = [
     "plotly>=7.1.0",
 ]
 
+[project.optional-dependencies]
+web = ["fastapi>=0.115", "uvicorn>=0.30"]
+
 [project.scripts]
 ashare-mcp-server = "ashare_mcp.server:main"
+ashare-web = "ashare_mcp.web.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
