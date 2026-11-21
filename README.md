@@ -69,7 +69,7 @@ Claude Desktop / Cursor（`claude_desktop_config.json` / `.cursor/mcp.json`）�
   "mcpServers": {
     "ashare": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/hantrleko/ashare-mcp", "ashare-mcp"]
+      "args": ["--from", "git+https://github.com/hantrleko/ashare-mcp", "a-share-mcp"]
     }
   }
 }

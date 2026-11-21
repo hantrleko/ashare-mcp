@@ -1,5 +1,5 @@
 [project]
-name = "ashare-mcp"
+name = "a-share-mcp"
 version = "0.1.0"
 description = "MCP server for A-share market data, paper trading, backtesting and fundamentals (akshare + tushare)"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ashare-mcp = "ashare_mcp.server:main"
+a-share-mcp = "ashare_mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]
