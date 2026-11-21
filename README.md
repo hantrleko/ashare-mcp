@@ -62,7 +62,20 @@ Claude Desktop / Cursor（`claude_desktop_config.json` / `.cursor/mcp.json`）�
 }
 ```
 
-或直接跑 git 上的最新版：
+免克隆直接用（PyPI）：
+
+```json
+{
+  "mcpServers": {
+    "ashare": {
+      "command": "uvx",
+      "args": ["ashare-mcp-server"]
+    }
+  }
+}
+```
+
+或跑 git 上的最新版：
 
 ```json
 {
