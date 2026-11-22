@@ -4,13 +4,32 @@ import pandas as pd
 import ashare_mcp.data.akshare_data as ad
 
 
-def test_get_quotes_small_batch_parallel(monkeypatch):
-    """<=20 symbols route through get_quote concurrently, not the snapshot."""
+def test_get_quotes_tencent_partial_fallback(monkeypatch):
+    """One Tencent batch for all symbols; misses use per-symbol fallback;
+    output order follows input."""
+    tdf = pd.DataFrame({"code": ["600519", "300750"], "name": ["a", "b"],
+                        "price": [1.0, 2.0]})
+    monkeypatch.setattr(ad.tencent, "fetch_quotes", lambda syms: tdf)
     calls = []
-    monkeypatch.setattr(ad, "get_quote",
-                        lambda s: calls.append(s) or {"code": s, "price": 1.0})
-    monkeypatch.setattr(ad, "_spot_df",
-                        lambda: (_ for _ in ()).throw(AssertionError("snapshot")))
+    monkeypatch.setattr(ad, "_minute_quote",
+                        lambda c, m: calls.append(c) or {"code": c, "price": 9.0})
+    monkeypatch.setattr(ad, "_last_close_quote",
+                        lambda c, m: {"code": c, "price": 8.0})
+    out = ad.get_quotes(["600519", "000001", "300750"])
+    assert [r["code"] for r in out] == ["600519", "000001", "300750"]
+    assert calls == ["000001"]  # only the missing symbol hit the fallback
+
+
+def test_get_quotes_tencent_failure_fallback(monkeypatch):
+    """When the Tencent batch fails outright every symbol falls back."""
+    def boom(syms):
+        raise RuntimeError("offline")
+    monkeypatch.setattr(ad.tencent, "fetch_quotes", boom)
+    calls = []
+    monkeypatch.setattr(ad, "_minute_quote",
+                        lambda c, m: calls.append(c) or {"code": c, "price": 1.0})
+    monkeypatch.setattr(ad, "_last_close_quote",
+                        lambda c, m: {"code": c, "price": 8.0})
     out = ad.get_quotes(["600519", "000001", "300750"])
     assert [r["code"] for r in out] == ["600519", "000001", "300750"]
     assert sorted(calls) == ["000001", "300750", "600519"]

@@ -163,6 +163,8 @@ export const api = {
   accountDelete: (id: string) =>
     req<Record<string, unknown>>(`/accounts/${enc(id)}`, { method: "DELETE" }),
   scheduler: () => req<SchedulerStatus>("/scheduler"),
+  marketClock: () =>
+    req<{ date: string; server_time: string; is_trading_day: boolean | null }>("/market-clock"),
 
   paperStatus: (account: string) =>
     req<PaperStatus>(`/paper/status?account=${enc(account)}`),

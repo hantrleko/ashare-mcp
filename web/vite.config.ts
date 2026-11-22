@@ -4,6 +4,16 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor_react: ["react", "react-dom", "react-router-dom"],
+          vendor_charts: ["lightweight-charts"],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

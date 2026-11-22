@@ -19,8 +19,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build frontend
+        run: |
+          cd web
+          npm ci
       - name: Build sdist + wheel
         run: |
           pip install uv
+          uv run python scripts/build_web.py
           uv build
       - uses: pypa/gh-action-pypi-publish@release/v1

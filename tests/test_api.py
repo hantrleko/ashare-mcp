@@ -204,8 +204,11 @@ def test_scheduler_endpoint(client):
 
 
 def test_trigger_tick_and_settle(client, monkeypatch):
+    from ashare_mcp.data import calendar as cal
     from ashare_mcp.web import scheduler
 
+    # neutral calendar: unknown → scheduler falls back to its index check
+    monkeypatch.setattr(cal, "is_trading_day", lambda d: None)
     client.get("/api/paper/status")  # lazily create the default account
     # trigger check: account with a pending trigger gets checked
     client.post("/api/accounts", json={"name": "t", "id": "test1"})
@@ -235,3 +238,28 @@ def test_trigger_tick_and_settle(client, monkeypatch):
                                 get_kline=fake_kline)
     assert len(res["accounts"]) >= 2
     assert scheduler._state["last_settlement_date"] == today
+
+
+def test_market_clock(client, monkeypatch):
+    from ashare_mcp.data import calendar as cal
+    monkeypatch.setattr(cal, "is_trading_day", lambda d: True)
+    r = client.get("/api/market-clock")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["is_trading_day"] is True
+    assert "date" in j and "server_time" in j
+    assert j["date"] in j["server_time"]  # server_time is China-time ISO
+
+
+def test_resolve_dist_prefers_package_static(tmp_path, monkeypatch):
+    static = tmp_path / "ashare_mcp" / "web" / "static"
+    static.mkdir(parents=True)
+    (static / "index.html").write_text("<html/>")
+    monkeypatch.delenv("ASHARE_WEB_DIST", raising=False)
+    monkeypatch.setattr(api, "__file__", str(static.parent / "api.py"))
+    assert api._resolve_dist() == static
+
+
+def test_resolve_dist_env_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("ASHARE_WEB_DIST", str(tmp_path))
+    assert api._resolve_dist() == tmp_path

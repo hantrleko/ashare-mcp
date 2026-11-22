@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AreaSeries, CandlestickSeries, LineSeries, createSeriesMarkers } from "lightweight-charts";
 import { api, type BacktestResult, type Bar } from "../api";
-import { Card, ErrorBanner, useChart } from "../components/ui";
+import { Card, ErrorBanner } from "../components/ui";
+import { useChart } from "../components/chart";
 import { SearchBox } from "../components/SearchBox";
 import { DOWN, UP, fmtNum, fmtPct, fmtPrice, fmtSigned, signedClass, todayYmd } from "../format";
 
@@ -222,7 +223,7 @@ function EquityVsBench({ res }: { res: BacktestResult }) {
         <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#7b7ff2] align-middle" />策略</span>
         <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#8b93a7] align-middle" />买入持有</span>
       </div>
-      <div ref={ref} className="w-full" />
+      <div ref={ref} className="w-full min-w-0 overflow-hidden" />
     </div>
   );
 }
@@ -247,7 +248,7 @@ function PriceWithTrades({ bars, res }: { bars: Bar[]; res: BacktestResult }) {
     chart.timeScale().fitContent();
   }, [chart, bars, res]);
   if (!bars.length) return <p className="py-4 text-center text-sm text-slate-500">K线数据不可用，无法绘制交易点</p>;
-  return <div ref={ref} className="w-full" />;
+  return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
 
 function Drawdown({ res }: { res: BacktestResult }) {
@@ -266,7 +267,7 @@ function Drawdown({ res }: { res: BacktestResult }) {
     s.setData(dd);
     chart.timeScale().fitContent();
   }, [chart, res]);
-  return <div ref={ref} className="w-full" />;
+  return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
 
 function MonthlyHeatmap({ data }: { data: { month: string; ret: number }[] }) {

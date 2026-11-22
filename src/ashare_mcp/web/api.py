@@ -179,7 +179,7 @@ async def _lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="ashare-mcp web", version="0.1.0", lifespan=_lifespan)
+app = FastAPI(title="ashare-mcp web", version="0.3.0", lifespan=_lifespan)
 
 
 @app.exception_handler(Exception)
@@ -409,6 +409,16 @@ def scheduler_status() -> dict[str, Any]:
     return scheduler.status()
 
 
+@app.get("/api/market-clock")
+def market_clock() -> dict[str, Any]:
+    from . import scheduler
+    from ..data.calendar import is_trading_day
+    now = scheduler._now()
+    return {"date": now.date().isoformat(),
+            "server_time": now.isoformat(timespec="seconds"),
+            "is_trading_day": is_trading_day(now.date())}
+
+
 # ---------- backtest ----------
 
 @app.post("/api/backtest")
@@ -444,7 +454,17 @@ def strategies() -> dict[str, Any]:
 
 # ---------- static frontend (SPA) ----------
 
-_dist = Path(os.environ.get("ASHARE_WEB_DIST", REPO_ROOT / "web" / "dist"))
+def _resolve_dist() -> Path:
+    env = os.environ.get("ASHARE_WEB_DIST", "").strip()
+    if env:
+        return Path(env)
+    pkg_static = Path(__file__).resolve().parent / "static"
+    if (pkg_static / "index.html").is_file():
+        return pkg_static
+    return REPO_ROOT / "web" / "dist"
+
+
+_dist = _resolve_dist()
 if _dist.is_dir():
     from fastapi.staticfiles import StaticFiles
 

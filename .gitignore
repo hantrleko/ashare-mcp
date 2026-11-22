@@ -25,3 +25,5 @@ web/*.tsbuildinfo
 *.migrated
 
 .screens/
+
+src/ashare_mcp/web/static/

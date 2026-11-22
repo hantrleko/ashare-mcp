@@ -59,6 +59,9 @@ def _accounts_ctx():
 def _in_session(now: datetime) -> bool:
     if now.weekday() >= 5:
         return False
+    from ..data.calendar import is_trading_day
+    if is_trading_day(now.date()) is False:
+        return False  # weekday exchange holiday
     t = now.time()
     return dtime(9, 30) <= t <= dtime(11, 30) or dtime(13, 0) <= t <= dtime(15, 0)
 
@@ -119,6 +122,9 @@ def settle_tick(force: bool = False, get_index_kline: Callable | None = None,
     if not force:
         if _state["last_settlement_date"] == today:
             return {"skipped": "already ran today"}
+        from ..data.calendar import is_trading_day
+        if is_trading_day(_now().date()) is False:
+            return {"skipped": "holiday"}
         if not _traded_today(get_index_kline, today):
             return {"skipped": "not a trading day"}
 

@@ -6,6 +6,7 @@ a cooldown once a Push2RateLimitError is seen.
 """
 from __future__ import annotations
 
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
@@ -25,7 +26,9 @@ from ..utils import (
     sina_symbol,
     ts_code,
 )
-from . import store
+from . import store, tencent
+
+log = logging.getLogger(__name__)
 
 _SPOT_TTL = 60.0
 _INDEX_TTL = 60.0
@@ -168,7 +171,29 @@ def _sina_spot_df() -> pd.DataFrame:
     return _cached("spot_sina", _SPOT_TTL, _load_sina_spot)
 
 
+def _load_tencent_spot() -> pd.DataFrame:
+    """Full-market spot via Tencent (fast batch endpoint)."""
+    # universe: reuse a fresh cached live list, else the bundled snapshot —
+    # never block the spot path on the slow live list fetch
+    hit = _caches.get("stock_list")
+    if hit and time.time() - hit["ts"] < _LIST_TTL:
+        lst = hit["df"]
+    else:
+        lst = _bundled_stock_list()
+        if not len(lst):
+            lst = _stock_list_df()
+    syms = [sina_symbol(c, m) for c, m in zip(lst["code6"], lst["market"])]
+    df = tencent.fetch_quotes(syms)
+    if df.empty:
+        raise RuntimeError("tencent spot snapshot empty")
+    return df.rename(columns={"code": "code6"})
+
+
 def _load_spot() -> pd.DataFrame:
+    try:
+        return _load_tencent_spot()
+    except Exception as e:
+        log.warning("tencent spot failed, falling back: %s", e)
     if _em_available():
         try:
             return _em_spot_df()
@@ -378,8 +403,14 @@ def _last_close_quote(code6: str, mkt: str) -> dict[str, Any]:
 
 
 def get_quote(symbol: str) -> dict[str, Any]:
-    """Single-symbol quote: EM spot -> 1-min bar -> Sina spot -> daily close."""
+    """Single-symbol quote: Tencent -> EM spot -> 1-min bar -> Sina spot -> daily close."""
     code6, mkt = normalize_symbol(symbol)
+    try:
+        df = tencent.fetch_quotes([sina_symbol(code6, mkt)])
+        if not df.empty:
+            return _quote_from_spot(df.rename(columns={"code": "code6"}), code6)
+    except Exception:
+        pass
     if _em_available():
         try:
             return _quote_from_spot(_em_spot_df(), code6)
@@ -397,30 +428,23 @@ def get_quote(symbol: str) -> dict[str, Any]:
 
 
 def get_quotes(symbols: list[str]) -> list[dict[str, Any]]:
-    if len(symbols) <= 20:
-        # small batches: fast single-symbol path in parallel instead of the
-        # full-market snapshot (~60 s cold)
-        def one(s: str) -> dict[str, Any]:
-            try:
-                return get_quote(s)
-            except Exception:
-                code6, _ = normalize_symbol(s)
-                return {"code": code6, "error": "no quote data"}
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            return list(ex.map(one, symbols))
+    """Batch quotes: one Tencent multi-symbol fetch, per-symbol fallback
+    (_minute_quote / _last_close_quote) for whatever it misses."""
+    norm = [normalize_symbol(s) for s in symbols]
+    tmap: dict[str, dict[str, Any]] = {}
     try:
-        df = _spot_df()
-    except Exception:
-        df = None
-    out = []
-    for s in symbols:
-        code6, mkt = normalize_symbol(s)
-        row = None
-        if df is not None:
+        df = tencent.fetch_quotes(
+            [sina_symbol(c, m) for c, m in norm]).rename(columns={"code": "code6"})
+        for code6 in df["code6"]:
             try:
-                row = _quote_from_spot(df, code6)
+                tmap[code6] = _quote_from_spot(df, code6)
             except Exception:
-                row = None
+                continue
+    except Exception as e:
+        log.warning("tencent quotes failed, per-symbol fallback: %s", e)
+    out = []
+    for s, (code6, mkt) in zip(symbols, norm):
+        row = tmap.get(code6)
         if row is None:
             for fallback in (_minute_quote, _last_close_quote):
                 try:

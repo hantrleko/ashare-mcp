@@ -75,17 +75,31 @@ export function marketPhase(now = new Date()): Phase {
 
 export function MarketStatusPill() {
   const [phase, setPhase] = useState(marketPhase());
+  const [holiday, setHoliday] = useState<boolean | null>(null);
   useEffect(() => {
     const t = setInterval(() => setPhase(marketPhase()), 30_000);
     return () => clearInterval(t);
   }, []);
-  const live = phase.label === "交易中";
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await api.marketClock();
+        if (alive) setHoliday(r.is_trading_day);
+      } catch { /* keep local guess */ }
+    };
+    load();
+    const t = setInterval(load, 300_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const label = holiday === false ? "休市" : phase.label;
+  const live = holiday !== false && phase.label === "交易中";
   return (
     <span className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-2 py-0.5 text-xs text-slate-400">
       <span
         className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-400 pulse-dot" : "bg-slate-500"}`}
       />
-      {phase.label}
+      {label}
     </span>
   );
 }

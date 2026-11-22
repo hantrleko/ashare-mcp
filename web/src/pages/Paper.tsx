@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { LineSeries } from "lightweight-charts";
 import { api, ApiError, type Order, type PaperStatus, type Position, type Trigger, type EquityPoint, type SchedulerStatus } from "../api";
-import { Card, ErrorBanner, PctText, Spinner, useChart } from "../components/ui";
+import { Card, ErrorBanner, PctText, Spinner } from "../components/ui";
+import { useChart } from "../components/chart";
 import { fmtNum, fmtPrice, fmtSigned, signedClass } from "../format";
 import { useToast } from "../components/Toast";
 import { SearchBox } from "../components/SearchBox";
@@ -310,7 +311,7 @@ function EquityChart({ pts }: { pts: EquityPoint[] }) {
     s.setData(pts.map((p) => ({ time: (p.date || "").slice(0, 10), value: p.equity })));
     chart.timeScale().fitContent();
   }, [chart, pts]);
-  return <div ref={ref} className="w-full" />;
+  return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
 
 function TriggerPanel({ account, trigs, sched, onChange, toast }: {

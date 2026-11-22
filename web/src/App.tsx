@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import { AccountProvider } from "./account";
 import { AccountSwitcher } from "./components/AccountSwitcher";
@@ -7,10 +7,12 @@ import { ToastProvider } from "./components/Toast";
 import { MarketStatusPill } from "./components/liveness";
 import { getTheme, setTheme } from "./theme";
 import Home from "./pages/Home";
-import Stock from "./pages/Stock";
-import Paper from "./pages/Paper";
-import Backtest from "./pages/Backtest";
-import Market from "./pages/Market";
+import { Skeleton } from "./components/ui";
+
+const Stock = lazy(() => import("./pages/Stock"));
+const Paper = lazy(() => import("./pages/Paper"));
+const Backtest = lazy(() => import("./pages/Backtest"));
+const Market = lazy(() => import("./pages/Market"));
 
 const LINKS = [
   { to: "/", label: "首页" },
@@ -82,6 +84,7 @@ export default function App() {
           </header>
 
           <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 pb-20 sm:pb-5">
+            <Suspense fallback={<Skeleton rows={6} />}>
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/stock/:code" element={<Stock />} />
@@ -89,6 +92,7 @@ export default function App() {
               <Route path="/paper" element={<Paper />} />
               <Route path="/backtest" element={<Backtest />} />
             </Routes>
+            </Suspense>
           </main>
 
           <footer className="border-t border-line py-4 text-center text-xs text-slate-500 max-sm:hidden">

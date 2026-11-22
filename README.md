@@ -131,7 +131,8 @@ cd web; npm run dev   # http://127.0.0.1:5173
 - **MCP**：所有 `paper_*` 工具接受 `account` 参数（默认 `"default"`）；`paper_list_accounts` / `paper_create_account` 管理账户。
 - **Web 调度器**（uvicorn 内守护线程）：交易时段（9:30–11:30 / 13:00–15:00 CST）每分钟为有待触发条件单的账户跑 `check_triggers`；每日 15:35 后为所有账户落当日净值、并预热持仓/条件单个股与九大指数的 K线缓存。`ASHARE_WEB_SCHEDULER=0` 关闭；`GET /api/scheduler` 查状态。
 - **`ashare-sync` CLI**：立即跑一次每日结算+缓存预热；`--force` 跳过节假日判断。
-- 已知限制：盘中条件单检查不区分工作日与交易所节假日——节假日盘中会用最近收盘价评估条件单（不会成交到不存在的行情）。
+- **交易日历** `data/trade_calendar.json`：新浪交易日历（`calendar_trade_date_hist_sina`）本地缓存，7 天或越界自动刷新，取数失败回退旧文件；`GET /api/market-clock` 返回当前是否交易日，前端状态药丸节假日全天显示"休市"。
+- 已知限制：交易日历取数完全失败且无本地缓存时，盘中条件单检查退回到"周一~周五"规则——节假日盘中会用最近收盘价评估条件单（不会成交到不存在的行情）。
 
 ## Streamlit 看板（轻量旧版）
 

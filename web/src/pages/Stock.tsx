@@ -6,7 +6,8 @@ import {
 } from "lightweight-charts";
 import { api, type Bar, type Quote } from "../api";
 import { boll, macd, rsi, sma, toPts } from "../indicators";
-import { Card, ErrorBanner, PctText, Skeleton, Spinner, useChart } from "../components/ui";
+import { Card, ErrorBanner, PctText, Skeleton, Spinner } from "../components/ui";
+import { useChart } from "../components/chart";
 import { DOWN, UP, fmtAmount, fmtPct, fmtPrice, fmtSigned, todayYmd } from "../format";
 import { useToast } from "../components/Toast";
 import { useAccount } from "../account";
@@ -113,7 +114,7 @@ export default function Stock() {
       <ErrorBanner error={qErr} onRetry={loadQuote} />
 
       <div className="grid gap-4 xl:grid-cols-4">
-        <div className="space-y-4 xl:col-span-3">
+        <div className="min-w-0 space-y-4 xl:col-span-3">
           {/* chart */}
           <Card>
             <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
@@ -277,7 +278,7 @@ function KChart({ bars, ind, boll: showBoll, onHover }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chart, bars, ind, showBoll]);
 
-  return <div ref={ref} className="w-full" />;
+  return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
 
 /* ---------- quick trade ---------- */
@@ -456,7 +457,7 @@ function FlowChart({ rows, kkey }: { rows: Record<string, unknown>[]; kkey: stri
     }));
     chart.timeScale().fitContent();
   }, [chart, rows, kkey]);
-  return <div ref={ref} className="mb-3 w-full" />;
+  return <div ref={ref} className="mb-3 w-full min-w-0 overflow-hidden" />;
 }
 
 function FinTab({ code }: { code: string }) {
