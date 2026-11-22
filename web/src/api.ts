@@ -375,7 +375,57 @@ export const api = {
       post({ action, force })),
   housePlans: (id: string) =>
     req<{ plans: HousePlan[] }>(`/arena/house/plans/${enc(id)}`),
+
+  factorList: () => req<{ data: FactorInfo[] }>("/factor/list"),
+  factorSubmit: (b: FactorJobIn) =>
+    req<{ job_id: string }>("/factor/jobs", post(b)),
+  factorJob: (id: string) => req<FactorJobState>(`/factor/jobs/${enc(id)}`),
 };
+
+export interface FactorInfo {
+  id: string; name: string; sign: number; desc: string;
+}
+
+export interface FactorJobIn {
+  factor?: string;
+  composite?: { factor: string; sign: number }[] | null;
+  universe?: string;
+  universe_size?: number;
+  symbols?: string[] | null;
+  start_date?: string;
+  end_date?: string;
+  freq?: string;
+  quantiles?: number;
+}
+
+export interface ICSummary {
+  n: number; mean: number | null; std: number | null;
+  icir: number | null; icir_ann: number | null; t: number | null;
+  pos_ratio: number | null;
+}
+
+export interface FactorResult {
+  params: Record<string, unknown>;
+  universe: { count: number; dropped: string[] };
+  dates_used: string[];
+  dates_dropped_small: string[];
+  ic_series: { date: string; ic: number | null; rank_ic: number | null; n: number }[];
+  ic_summary: ICSummary;
+  rank_ic_summary: ICSummary;
+  quantile_nav: Record<string, { date: string; nav: number }[]>;
+  quantile_annual: Record<string, number | null>;
+  top_turnover: number | null;
+  ic_decay: { lag: number; rank_ic_mean: number | null; n: number }[];
+  notes: string[];
+}
+
+export interface FactorJobState {
+  job_id: string;
+  state: "queued" | "running" | "done" | "failed";
+  progress: { loaded: number; total: number; stage: string };
+  error: string | null;
+  result: FactorResult | null;
+}
 
 function post(body: unknown): RequestInit {
   return {

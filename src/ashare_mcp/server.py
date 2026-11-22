@@ -653,6 +653,56 @@ def get_industry_peers(symbol: str, limit: int = 30) -> dict[str, Any]:
         return _err(e)
 
 
+@mcp.tool()
+def factor_test(factor: str = "mom_20",
+                composite: list[dict] | None = None,
+                universe_size: int = 100,
+                symbols: list[str] | None = None,
+                start_date: str = "", end_date: str = "",
+                freq: str = "M", quantiles: int = 5) -> dict[str, Any]:
+    """Backtest a single factor or composite on a daily panel.
+
+    factor: mom_20 | mom_60 | mom_120_skip20 | rev_5 | vol_20 | vol_60 |
+    turn_20 | amihud_20 | maxret_20 (see get_industry_peers notes for
+    data caveats). composite: [{factor, sign: +1|-1}] overrides factor.
+    universe_size: top-N stocks by current mkt_cap (20-300, survivorship
+    / look-ahead biased — research only); or pass symbols (20-300 codes,
+    overrides universe_size). freq: W|M rebalance. quantiles: 3-10.
+    Runs synchronously (kline loading may take minutes). Returns IC /
+    RankIC summaries, quantile annualized returns, LS, IC decay, notes.
+    """
+    try:
+        from .research.factors import jobs
+        params = {"factor": factor, "composite": composite,
+                  "universe_size": universe_size,
+                  "start_date": start_date, "end_date": end_date,
+                  "freq": freq, "quantiles": quantiles}
+        if symbols:
+            params["universe"] = "custom"
+            params["symbols"] = symbols
+        job_id = jobs.submit(params)
+        import time as _t
+        deadline = _t.time() + 1800
+        while _t.time() < deadline:
+            st = jobs.status(job_id)
+            if st["state"] == "done":
+                r = st["result"]
+                return {"params": r["params"], "universe": r["universe"],
+                        "n_dates": len(r["dates_used"]),
+                        "dates_dropped_small": r["dates_dropped_small"],
+                        "ic_summary": r["ic_summary"],
+                        "rank_ic_summary": r["rank_ic_summary"],
+                        "quantile_annual": r["quantile_annual"],
+                        "top_turnover": r["top_turnover"],
+                        "ic_decay": r["ic_decay"], "notes": r["notes"]}
+            if st["state"] == "failed":
+                return {"error": st["error"]}
+            _t.sleep(2)
+        return {"error": "timeout waiting for factor job"}
+    except Exception as e:
+        return _err(e)
+
+
 def main() -> None:
     mcp.run()
 

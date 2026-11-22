@@ -22,10 +22,10 @@ def test_tools_registered():
         "run_backtest", "run_portfolio_backtest", "scan_backtest_params",
         "provider_status",
         "screen_stocks", "list_industries", "get_industry_peers",
-        "arena_register", "arena_leaderboard",
+        "arena_register", "arena_leaderboard", "factor_test",
     }
     assert expected <= names, f"missing: {expected - names}"
-    assert len(names) == len(expected)  # 35 tools
+    assert len(names) == len(expected)  # 36 tools
 
 
 def test_reason_params_present():

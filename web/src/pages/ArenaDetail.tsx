@@ -10,6 +10,18 @@ import { useChart } from "../components/chart";
 import { M, toDay } from "../components/bt_shared";
 import { ddClass, fmtDD, fmtPct, fmtNum, fmtSigned, signedClass } from "../format";
 
+const METRIC_LABEL: Record<string, [string, boolean]> = {
+  pe_ttm: ["市盈率", false],
+  pb: ["市净率", false],
+  roe_est: ["估算ROE", true],
+  ret20: ["20日涨幅", true],
+  ret60: ["60日涨幅", true],
+};
+function fmtMetric(k: string, v: unknown): string {
+  const [label, isPct] = METRIC_LABEL[k] ?? [k, false];
+  return `${label} ${v}${isPct ? "%" : ""}`;
+}
+
 function EquityChart({ d }: { d: ArenaDetail }) {
   const { ref, chart } = useChart({ height: 240 });
   useEffect(() => {
@@ -117,7 +129,8 @@ export default function ArenaAgent() {
                       </td>
                       <td className="py-1.5 pr-2">{t.name}</td>
                       <td className="num py-1.5 pr-2 text-slate-400">
-                        {Object.entries(t.metrics ?? {}).map(([k, v]) => `${k}=${v}`).join(" ")}
+                        {Object.entries(t.metrics ?? {})
+                          .map(([k, v]) => fmtMetric(k, v)).join(" ")}
                       </td>
                       <td className="py-1.5 text-slate-500">{t.note}</td>
                     </tr>

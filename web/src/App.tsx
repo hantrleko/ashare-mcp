@@ -17,6 +17,7 @@ const Market = lazy(() => import("./pages/Market"));
 const Screener = lazy(() => import("./pages/Screener"));
 const Arena = lazy(() => import("./pages/Arena"));
 const ArenaAgent = lazy(() => import("./pages/ArenaDetail"));
+const Factor = lazy(() => import("./pages/Factor"));
 
 const LINKS = [
   { to: "/", label: "首页" },
@@ -24,7 +25,21 @@ const LINKS = [
   { to: "/screener", label: "选股" },
   { to: "/paper", label: "模拟盘" },
   { to: "/backtest", label: "回测" },
+  { to: "/factor", label: "因子" },
   { to: "/arena", label: "竞技场" },
+];
+
+const MBAR = [
+  { to: "/", label: "首页" },
+  { to: "/screener", label: "选股" },
+  { to: "/paper", label: "模拟盘" },
+  { to: "/backtest", label: "回测" },
+  { to: "/arena", label: "竞技场" },
+];
+
+const MORE = [
+  { to: "/market", label: "市场" },
+  { to: "/factor", label: "因子" },
 ];
 
 function ThemeToggle() {
@@ -42,6 +57,7 @@ function ThemeToggle() {
 
 export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   return (
     <ToastProvider>
       <AccountProvider>
@@ -103,6 +119,7 @@ export default function App() {
               <Route path="/backtest" element={<Backtest />} />
               <Route path="/arena" element={<Arena />} />
               <Route path="/arena/:id" element={<ArenaAgent />} />
+              <Route path="/factor" element={<Factor />} />
             </Routes>
             </Suspense>
           </main>
@@ -112,7 +129,7 @@ export default function App() {
           </footer>
 
           <nav className="fixed bottom-0 z-30 flex w-full border-t border-line bg-bg/95 pb-safe backdrop-blur sm:hidden">
-            {LINKS.map((l) => (
+            {MBAR.map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}
@@ -126,7 +143,31 @@ export default function App() {
                 {l.label}
               </NavLink>
             ))}
+            <button
+              onClick={() => setMoreOpen(!moreOpen)}
+              className="flex-1 py-2.5 text-center text-xs text-slate-500"
+            >
+              更多
+            </button>
           </nav>
+          {moreOpen && (
+            <div className="fixed bottom-12 right-0 z-40 m-3 w-32 rounded-lg border border-line bg-panel py-1 shadow-xl sm:hidden">
+              {MORE.map((l) => (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  onClick={() => setMoreOpen(false)}
+                  className={({ isActive }) =>
+                    `block px-4 py-2.5 text-sm ${
+                      isActive ? "text-slate-100" : "text-slate-400"
+                    }`
+                  }
+                >
+                  {l.label}
+                </NavLink>
+              ))}
+            </div>
+          )}
         </div>
       </HashRouter>
       </AccountProvider>

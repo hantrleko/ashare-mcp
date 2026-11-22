@@ -306,7 +306,8 @@ async def _rate_limit(request: Request, call_next):
                 content={"detail": "MCP 需要 API Key（Authorization: Bearer …）"})
         ident = "admin" if role == "admin" else (acct or ip)
         wait = _bucket(("mcp", ident), RATE_MCP, now)
-    elif path == "/api/screen" or path.startswith("/api/backtest"):
+    elif (path == "/api/screen" or path.startswith("/api/backtest")
+          or path == "/api/factor/jobs"):
         wait = _bucket(("heavy", ip), RATE_HEAVY, now)
     elif request.method != "GET":
         # only a verified key gets its own bucket; anything else counts per IP
@@ -414,6 +415,46 @@ def statement(symbol: str, type: str = "income") -> dict[str, Any]:
     if type not in ("income", "balance", "cashflow"):
         raise HTTPException(400, "type must be income|balance|cashflow")
     return _run("get_financial_statement", symbol, type, 8, ttl=TTL_SLOW)
+
+
+@app.get("/api/factor/list")
+def factor_list() -> dict[str, Any]:
+    from ..research.factors import FACTOR_INFO
+    return {"data": FACTOR_INFO}
+
+
+class FactorJobIn(BaseModel):
+    factor: str = "mom_20"
+    composite: list[dict[str, Any]] | None = None
+    universe: str = "top_cap"
+    universe_size: int = 100
+    symbols: list[str] | None = None
+    start_date: str = ""
+    end_date: str = ""
+    freq: str = "M"
+    quantiles: int = 5
+
+
+@app.post("/api/factor/jobs")
+def factor_submit(body: FactorJobIn) -> dict[str, Any]:
+    from ..research.factors import jobs
+    try:
+        return {"job_id": jobs.submit(body.model_dump())}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise _err(e)
+
+
+@app.get("/api/factor/jobs/{job_id}")
+def factor_job(job_id: str) -> dict[str, Any]:
+    from ..research.factors import jobs
+    try:
+        return jobs.status(job_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise _err(e)
 
 
 @app.get("/api/factor/{symbol}")

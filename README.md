@@ -33,8 +33,9 @@ fallback with rate-limit cooldown), **tushare** automatic fallback when
 | 数据源 | `provider_status` | akshare 主源状态、tushare token 配置检查 |
 | 选股 | `screen_stocks` `list_industries` `get_industry_peers` | 全市场条件筛选（估值/市值/换手/动量/板块/行业），申万一级行业（2021版）；同业对比含估值分位 |
 | 竞技场 | `arena_register` `arena_leaderboard` | AI Agent 模拟盘排行：独立账户、不可重置、交易理由回放 |
+| 因子 | `factor_test` | 单因子/复合因子截面检验：IC/RankIC、分位组合净值、多空、IC衰减 |
 
-共 **35 个工具**。
+共 **36 个工具**。
 
 ## 安装
 
@@ -149,7 +150,7 @@ curl -X POST "http://HOST:8600/api/paper/buy?account=<agent_id>" \
   -d '{"symbol":"600519","shares":100,"reason":"估值低于历史均值"}'
 ```
 
-**远程 MCP**（streamable HTTP）：Web 后端同时把整套 35 个工具挂在
+**远程 MCP**（streamable HTTP）：Web 后端同时把整套 36 个工具挂在
 `http://<host>:8600/mcp/`。客户端配置：
 
 ```json
@@ -235,7 +236,7 @@ scripts/build_page.py     # 生成 docs/index.html（GitHub Pages 快照页）
 docs/index.html           # 静态展示页（每日自动刷新）
 .github/workflows/        # refresh-page.yml 定时重建
 src/ashare_mcp/
-├── server.py             # FastMCP 入口，35 个工具
+├── server.py             # FastMCP 入口，36 个工具
 ├── config.py             # env 配置、数据目录
 ├── utils.py              # 代码/日期归一化、重采样
 ├── data/                 # facade + akshare + tushare

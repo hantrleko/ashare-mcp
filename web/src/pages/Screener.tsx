@@ -369,6 +369,16 @@ export default function Screener() {
             title={sel.size >= 2 && sel.size <= 50 ? "对选中股票运行组合回测" : "勾选 2–50 只股票"}>
             组合回测{sel.size ? `(${sel.size})` : ""}
           </a>
+          <a href={sel.size >= 20 && sel.size <= 300
+              ? `#/factor?codes=${[...sel].join(",")}` : undefined}
+            className={`rounded border border-line px-2 py-0.5 text-xs ${
+              sel.size >= 20 && sel.size <= 300
+                ? "text-slate-300 hover:bg-panel2"
+                : "pointer-events-none text-slate-600"}`}
+            title={sel.size >= 20 && sel.size <= 300
+              ? "对选中股票运行因子检验" : "勾选 20–300 只股票"}>
+            因子检验
+          </a>
           <button onClick={exportCsv} disabled={!res?.rows.length}
             className="rounded border border-line px-2 py-0.5 text-xs text-slate-300 hover:bg-panel2 disabled:opacity-40">
             导出 CSV
