@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LineSeries } from "lightweight-charts";
 import { api, ApiError, type Order, type PaperStatus, type Position, type Trigger, type EquityPoint, type SchedulerStatus } from "../api";
 import { Card, ErrorBanner, PctText, Spinner, useChart } from "../components/ui";
-import { fmtNum, fmtPrice, fmtSigned } from "../format";
+import { fmtNum, fmtPrice, fmtSigned, signedClass } from "../format";
 import { useToast } from "../components/Toast";
 import { SearchBox } from "../components/SearchBox";
 import { useAccount } from "../account";
@@ -80,7 +80,7 @@ export default function Paper() {
           <Stat label="总资产" v={fmtNum(st.equity)} sub={<PctText v={st.total_return_pct} />} />
           <Stat label="现金" v={fmtNum(st.cash)} />
           <Stat label="持仓市值" v={fmtNum(st.market_value)} />
-          <Stat label="总盈亏" v={fmtSigned(st.total_pnl)} cls={st.total_pnl >= 0 ? "text-up" : "text-down"} />
+          <Stat label="总盈亏" v={fmtSigned(st.total_pnl)} cls={signedClass(st.total_pnl)} />
           <Stat label="持仓数" v={String(st.position_count)} />
         </div>
       )}
@@ -93,7 +93,9 @@ export default function Paper() {
 
       <Card title="持仓">
         {pos.length ? (
-          <div className="overflow-x-auto">
+          <div className="flex flex-col gap-4 md:flex-row">
+          <AllocationDonut pos={pos} cash={st?.cash ?? 0} />
+          <div className="min-w-0 flex-1 overflow-x-auto">
             <table className="w-full whitespace-nowrap text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs text-slate-500">
@@ -113,7 +115,7 @@ export default function Paper() {
                     <td className="num px-2 py-1.5">{fmtPrice(p.avg_cost, 3)}</td>
                     <td className="num px-2 py-1.5">{fmtPrice(p.last_price)}</td>
                     <td className="num px-2 py-1.5">{fmtNum(p.market_value)}</td>
-                    <td className={`num px-2 py-1.5 ${p.pnl >= 0 ? "text-up" : "text-down"}`}>{fmtSigned(p.pnl)}</td>
+                    <td className={`num px-2 py-1.5 ${signedClass(p.pnl)}`}>{fmtSigned(p.pnl)}</td>
                     <td className="px-2 py-1.5">
                       <button
                         onClick={() => doSell(p.code)}
@@ -127,6 +129,7 @@ export default function Paper() {
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
         ) : <p className="py-4 text-center text-sm text-slate-500">暂无持仓（在个股页快捷交易下单）</p>}
       </Card>
@@ -229,6 +232,54 @@ function AccountHeader({ name, isDefault, onRenamed, onDeleted, onError }: {
   );
 }
 
+const SLICE_COLORS = ["#7b7ff2", "#f0b90b", "#c084fc", "#38bdf8", "#fb923c",
+                      "#a3e635", "#f472b6", "#94a3b8"];
+
+function AllocationDonut({ pos, cash }: { pos: Position[]; cash: number }) {
+  const slices = [
+    ...pos.map((p, i) => ({
+      label: p.name || p.code, v: p.market_value,
+      color: SLICE_COLORS[i % SLICE_COLORS.length],
+    })),
+    { label: "现金", v: Math.max(cash, 0), color: "#475569" },
+  ].filter((s) => s.v > 0);
+  const total = slices.reduce((a, s) => a + s.v, 0) || 1;
+  let acc = -Math.PI / 2;
+  const R = 46, r = 26, CX = 60, CY = 60;
+  const arcs = slices.map((s) => {
+    const a0 = acc;
+    const a1 = acc + (s.v / total) * Math.PI * 2;
+    acc = a1;
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    const p = (a: number, rr: number) =>
+      `${CX + rr * Math.cos(a)},${CY + rr * Math.sin(a)}`;
+    return {
+      ...s,
+      d: `M${p(a0, R)} A${R} ${R} 0 ${large} 1 ${p(a1, R)} ` +
+         `L${p(a1, r)} A${r} ${r} 0 ${large} 0 ${p(a0, r)} Z`,
+      pct: (s.v / total) * 100,
+    };
+  });
+  return (
+    <div className="flex items-center gap-4 md:w-64">
+      <svg viewBox="0 0 120 120" className="h-28 w-28 shrink-0">
+        {arcs.map((a) => (
+          <path key={a.label} d={a.d} fill={a.color} opacity={0.9} />
+        ))}
+      </svg>
+      <div className="space-y-1 text-xs">
+        {arcs.map((a) => (
+          <div key={a.label} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-sm" style={{ background: a.color }} />
+            <span className="text-slate-400">{a.label}</span>
+            <span className="num ml-auto pl-2">{a.pct.toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Stat({ label, v, cls = "", sub }: { label: string; v: string; cls?: string; sub?: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-line bg-panel px-4 py-3">
@@ -243,8 +294,20 @@ function EquityChart({ pts }: { pts: EquityPoint[] }) {
   const { ref, chart } = useChart({ height: 220 });
   useEffect(() => {
     if (!chart) return;
-    const s = chart.addSeries(LineSeries, { color: "#7b7ff2", lineWidth: 2 });
-    s.setData(pts.map((p) => ({ time: p.date, value: p.equity })));
+    const s = chart.addSeries(LineSeries, {
+      color: "#7b7ff2", lineWidth: 2,
+      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+      // keep a sensible ±0.5% window when equity is flat
+      autoscaleInfoProvider: (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        const r = orig();
+        if (!r) return r;
+        const mid = (r.priceRange.minValue + r.priceRange.maxValue) / 2;
+        const half = Math.max(mid * 0.005, 1);
+        r.priceRange = { minValue: mid - half, maxValue: mid + half };
+        return r;
+      },
+    });
+    s.setData(pts.map((p) => ({ time: (p.date || "").slice(0, 10), value: p.equity })));
     chart.timeScale().fitContent();
   }, [chart, pts]);
   return <div ref={ref} className="w-full" />;

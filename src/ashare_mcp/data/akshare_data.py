@@ -7,6 +7,7 @@ a cooldown once a Push2RateLimitError is seen.
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -396,6 +397,17 @@ def get_quote(symbol: str) -> dict[str, Any]:
 
 
 def get_quotes(symbols: list[str]) -> list[dict[str, Any]]:
+    if len(symbols) <= 20:
+        # small batches: fast single-symbol path in parallel instead of the
+        # full-market snapshot (~60 s cold)
+        def one(s: str) -> dict[str, Any]:
+            try:
+                return get_quote(s)
+            except Exception:
+                code6, _ = normalize_symbol(s)
+                return {"code": code6, "error": "no quote data"}
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            return list(ex.map(one, symbols))
     try:
         df = _spot_df()
     except Exception:
@@ -448,6 +460,33 @@ _INDEX_BOARD = [
 ]
 
 
+_DIST_BINS = [-9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9]
+_DIST_LABELS = ["≤-9", "-9~-7", "-7~-5", "-5~-3", "-3~-1", "-1~0", "0",
+                "0~1", "1~3", "3~5", "5~7", "7~9", "≥9"]
+
+
+def _pct_distribution(pct: pd.Series) -> list[dict[str, Any]]:
+    """Counts per pct_chg bucket; exact-0 is its own bucket."""
+    pct = pct.dropna()
+    counts = []
+    for i, label in enumerate(_DIST_LABELS):
+        if label == "0":
+            n = int((pct == 0).sum())
+        elif i == 0:
+            n = int((pct <= _DIST_BINS[0]).sum())
+        elif i == len(_DIST_LABELS) - 1:
+            n = int((pct >= _DIST_BINS[-1]).sum())
+        else:
+            j = i - 1 if i <= 5 else i - 2
+            lo, hi = _DIST_BINS[j], _DIST_BINS[j + 1]
+            if hi == 0:
+                n = int(((pct > lo) & (pct < 0)).sum())
+            else:
+                n = int(((pct > lo) & (pct <= hi)).sum())
+        counts.append({"range": label, "count": n})
+    return counts
+
+
 def get_market_overview() -> dict[str, Any]:
     idx_df = _index_spot_df()
     indices = []
@@ -468,6 +507,9 @@ def get_market_overview() -> dict[str, Any]:
             "decline": int((pct < 0).sum()),
             "flat": int((pct == 0).sum()),
             "avg_pct_chg": round(float(pct.mean()), 3),
+            "distribution": _pct_distribution(pct),
+            "limit_up": int((pct >= 9.8).sum()),
+            "limit_down": int((pct <= -9.8).sum()),
         }
     if "amount" in spot.columns:
         amt = pd.to_numeric(spot["amount"], errors="coerce").sum()
@@ -536,6 +578,101 @@ def get_index_kline(symbol: str = "sh000001", period: str = "daily",
 
 def _iso(yyyymmdd: str) -> str:
     return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:]}"
+
+
+def _is_index_symbol(symbol: str) -> bool:
+    s = symbol.strip().lower()
+    if not s.startswith(("sh", "sz", "bj")):
+        return False
+    d = s[2:8]
+    return ((s.startswith("sh") and d.startswith("000"))
+            or (s.startswith("sz") and d.startswith("399"))
+            or (s.startswith("bj") and d.startswith(("8", "9"))))
+
+
+def _intraday_points(df: pd.DataFrame, max_points: int) -> list[dict[str, Any]]:
+    """Minute df (cols day/open/close/volume...) -> [{time, price, volume}]
+    of the latest session, downsampled to <= max_points keeping the tail."""
+    day = pd.to_datetime(df["day"], errors="coerce")
+    last_day = day.dt.date.max()
+    df = df.loc[day.dt.date == last_day]
+    day = day.loc[day.dt.date == last_day]
+    pts = [{"time": t.strftime("%H:%M"),
+            "price": float(r["close"]),
+            "volume": float(r.get("volume") or 0)}
+           for t, (_, r) in zip(day, df.iterrows())]
+    if len(pts) > max_points:
+        stride = -(-len(pts) // (max_points - 1))
+        last = pts[-1]
+        pts = pts[::stride]
+        if pts[-1]["time"] != last["time"]:
+            pts.append(last)
+    return pts
+
+
+def get_intraday(symbol: str, max_points: int = 120) -> dict[str, Any]:
+    """Latest-session 1-minute bars + prev_close.
+
+    Returns {mode: "intraday"|"daily", prev_close, points:[{time,price,volume}]}.
+    Stocks use Sina 1-min bars; indices try the same feed and fall back to
+    the last 30 daily closes (mode="daily") when minute data is unavailable.
+    """
+    if _is_index_symbol(symbol):
+        idx = _norm_index_symbol(symbol)
+        try:
+            df = ak.stock_zh_a_hist_min_sina(symbol=idx, period="1")
+            if df is None or df.empty:
+                raise RuntimeError("empty")
+            session = _minute_session_date(df)
+            daily = get_index_kline(idx)[-60:]
+            prev = _close_before(daily, session)
+            return {"symbol": idx, "mode": "intraday", "prev_close": prev,
+                    "points": _intraday_points(df, max_points)}
+        except Exception:
+            daily = get_index_kline(idx)[-31:]
+            pts = [{"time": b["date"], "price": b["close"],
+                    "volume": b.get("volume") or 0} for b in daily[-30:]]
+            prev = daily[0]["close"] if len(daily) > 30 else None
+            return {"symbol": idx, "mode": "daily", "prev_close": prev,
+                    "points": pts}
+
+    code6, mkt = normalize_symbol(symbol)
+    sina_sym = sina_symbol(code6, mkt)
+    df = ak.stock_zh_a_hist_min_sina(symbol=sina_sym, period="1")
+    if df is None or df.empty:
+        raise KeyError(f"no minute data for {code6}")
+    session = _minute_session_date(df)
+    daily = get_kline(code6, adjust="", start_date="")[-60:]
+    prev = _close_before(daily, session)
+    if prev is None:
+        # no earlier daily bar in store/network — use the quote's prev_close
+        # only when the quote refers to the same session
+        try:
+            q = get_quote(code6)
+            if str(q.get("date") or "")[:10] == session:
+                prev = q.get("prev_close")
+        except Exception:
+            pass
+    if prev is None:
+        raise KeyError(f"no daily data for {code6}")
+    return {"symbol": code6, "mode": "intraday", "prev_close": prev,
+            "points": _intraday_points(df, max_points)}
+
+
+def _today_iso() -> str:
+    return date.today().isoformat()
+
+
+def _minute_session_date(df: pd.DataFrame) -> str:
+    """Session date (YYYY-MM-DD) of the last 1-minute bar."""
+    col = "day" if "day" in df.columns else df.columns[0]
+    return str(df.iloc[-1][col])[:10]
+
+
+def _close_before(daily: list[dict[str, Any]], session_date: str) -> float | None:
+    """Close of the last daily bar strictly before the intraday session date."""
+    before = [b for b in daily if str(b.get("date") or "")[:10] < session_date]
+    return float(before[-1]["close"]) if before else None
 
 
 def get_limit_pool(date_str: str = "", pool: str = "zt",

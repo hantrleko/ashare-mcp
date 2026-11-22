@@ -6,6 +6,40 @@
   --color-panel: #12161f;
   --color-panel2: #171c28;
   --color-line: #232a3a;
+  --color-bg: #0b0e14;
+  --color-accent: #7b7ff2;
+  --color-chart-text: #8b93a7;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --color-panel: #ffffff;
+  --color-panel2: #f1f4f9;
+  --color-line: #d8dee9;
+  --color-bg: #eef1f6;
+  /* invert the slate scale so text-slate-* stays readable */
+  --color-slate-50: #020617;
+  --color-slate-100: #0f172a;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #64748b;
+  --color-slate-600: #94a3b8;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;
+  --color-slate-950: #f8fafc;
+  /* red/green tints used by flashes & badges */
+  --color-red-300: #b91c1c;
+  --color-red-400: #b91c1c;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #047857;
+  --color-amber-400: #b45309;
+  --color-sky-400: #0369a1;
 }
 
 html, body, #root {
@@ -13,8 +47,8 @@ html, body, #root {
 }
 
 body {
-  background-color: #0b0e14;
-  color: #d5dbe7;
+  background-color: var(--color-bg);
+  color: var(--color-slate-300);
   font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
 }
 
@@ -23,6 +57,28 @@ body {
   font-feature-settings: "tnum";
 }
 
+/* price-change flash (~800ms) */
+@keyframes flash-up {
+  from { background-color: color-mix(in srgb, var(--color-up) 30%, transparent); }
+  to { background-color: transparent; }
+}
+@keyframes flash-down {
+  from { background-color: color-mix(in srgb, var(--color-down) 30%, transparent); }
+  to { background-color: transparent; }
+}
+.flash-up { animation: flash-up 0.8s ease-out; }
+.flash-down { animation: flash-down 0.8s ease-out; }
+
+/* market-status pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+/* bottom tab bar safe area */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0); }
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #2a3142; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -54,6 +54,7 @@ class _Cache:
 
 _cache = _Cache()
 TTL_QUOTE = 15.0        # quote / quotes / indices
+TTL_INTRADAY = 30.0     # minute bars
 TTL_SLOW = 600.0        # kline / financial / factor / statements
 
 
@@ -62,7 +63,8 @@ def _call(name: str, *args: Any, ttl: float = 0.0, **kwargs: Any) -> tuple[Any, 
         return market_data.call(name, *args, **kwargs)
     if ttl <= 0:
         return load()
-    return _cache.get((name, args, tuple(sorted(kwargs.items()))), ttl, load)
+    key_args = tuple(tuple(a) if isinstance(a, list) else a for a in args)
+    return _cache.get((name, key_args, tuple(sorted(kwargs.items()))), ttl, load)
 
 
 def _err(e: Exception) -> HTTPException:
@@ -240,6 +242,11 @@ def index_kline(symbol: str, period: str = "daily",
                 start: str = "") -> dict[str, Any]:
     return _run("get_index_kline", symbol, period=period, start_date=start,
                 ttl=TTL_SLOW)
+
+
+@app.get("/api/intraday/{symbol}")
+def intraday(symbol: str) -> dict[str, Any]:
+    return _run("get_intraday", symbol, ttl=TTL_INTRADAY)
 
 
 @app.get("/api/overview")

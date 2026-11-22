@@ -13,6 +13,12 @@ export function pctColor(v: number | null | undefined): string {
   return v > 0 ? UP : v < 0 ? DOWN : "#cbd5e1";
 }
 
+/** Tailwind class for a signed value — zero stays neutral. */
+export function signedClass(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return "";
+  return v > 0 ? "text-up" : v < 0 ? "text-down" : "text-slate-400";
+}
+
 export function fmtPct(v: number | null | undefined, digits = 2): string {
   if (v == null || Number.isNaN(v)) return "—";
   return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;

@@ -23,3 +23,5 @@ web/*.tsbuildinfo
 *.db-shm
 *.db-wal
 *.migrated
+
+.screens/

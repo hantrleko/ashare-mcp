@@ -29,8 +29,8 @@ export function AccountSwitcher() {
         className="flex items-center gap-1.5 rounded border border-line bg-panel px-2.5 py-1.5 text-sm text-slate-300 hover:bg-panel2"
         title="切换模拟账户"
       >
-        <span className="text-slate-500">账户</span>
-        <span className="max-w-24 truncate text-slate-100">
+        <span className="hidden text-slate-500 sm:inline">账户</span>
+        <span className="max-w-16 truncate text-slate-100 sm:max-w-24">
           {cur?.name ?? account}
         </span>
         <span className="text-xs text-slate-500">▾</span>

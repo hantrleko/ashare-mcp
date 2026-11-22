@@ -33,6 +33,7 @@ export interface Quote {
   price?: number; prev_close?: number; open?: number; high?: number;
   low?: number; volume?: number; amount?: number; pct_chg?: number;
   change?: number; turnover?: number; pe_ttm?: number | null; pb?: number | null;
+  mkt_cap?: number | null; float_mkt_cap?: number | null;
   date?: string; time?: string; note?: string;
 }
 
@@ -42,6 +43,12 @@ export interface Bar {
 }
 
 export interface SearchHit { code: string; name: string; market: string }
+
+export interface IntradayPoint { time: string; price: number; volume: number }
+export interface IntradayData {
+  symbol: string; mode: "intraday" | "daily";
+  prev_close: number | null; points: IntradayPoint[];
+}
 
 export interface PaperStatus {
   cash: number; market_value: number; equity: number;
@@ -83,6 +90,17 @@ export interface SchedulerStatus {
   last_error: string | null;
 }
 
+export interface BreadthDist { range: string; count: number }
+export interface OverviewData {
+  indices?: Quote[];
+  breadth?: {
+    advance?: number; decline?: number; flat?: number;
+    avg_pct_chg?: number; total_amount_yi?: number;
+    distribution?: BreadthDist[];
+    limit_up?: number; limit_down?: number;
+  };
+}
+
 export interface Trade {
   date: string; side: string; price: number; shares: number;
   amount: number; fee: number; pnl?: number;
@@ -95,6 +113,7 @@ export interface BacktestResult {
   max_drawdown: number; sharpe: number; num_trades: number;
   num_sells: number; win_rate: number | null;
   equity_curve: EquityPoint[]; benchmark: EquityPoint[];
+  monthly_returns: { month: string; ret: number }[];
   trades: Trade[];
 }
 
@@ -115,7 +134,9 @@ export const api = {
   kline: (sym: string, period = "daily", start = "", end = "", adjust = "qfq") =>
     req<Resp<Bar[]>>(`/kline/${enc(sym)}?period=${period}&start=${start}&end=${end}&adjust=${adjust}`),
   indices: () => req<Resp<Quote[]>>("/indices"),
-  overview: () => req<Resp<Record<string, unknown>>>("/overview"),
+  intraday: (sym: string) =>
+    req<Resp<IntradayData>>(`/intraday/${enc(sym)}`),
+  overview: () => req<Resp<OverviewData>>("/overview"),
   limitPool: (pool: string, date: string) =>
     req<Resp<Record<string, unknown>[]>>(`/limit-pool?pool=${pool}&date=${date}`),
   moneyFlow: (sym: string, days = 30) =>

@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createChart, type IChartApi, type DeepPartial, type ChartOptions } from "lightweight-charts";
 import { pctClass, fmtPct, fmtPrice } from "../format";
+import { cssVar, onThemeChange } from "../theme";
+
+function chartTheme(): DeepPartial<ChartOptions> {
+  return {
+    layout: {
+      background: { color: "transparent" },
+      textColor: cssVar("--color-chart-text"),
+      fontFamily: "Segoe UI, Microsoft YaHei, sans-serif",
+    },
+    grid: {
+      vertLines: { color: "color-mix(in srgb, var(--color-line) 55%, transparent)" },
+      horzLines: { color: "color-mix(in srgb, var(--color-line) 55%, transparent)" },
+    },
+    rightPriceScale: { borderColor: cssVar("--color-line") },
+    timeScale: { borderColor: cssVar("--color-line"), timeVisible: false },
+  };
+}
 
 export function Spinner({ label = "加载中…" }: { label?: string }) {
   return (
@@ -69,24 +86,16 @@ export function useChart(opts?: DeepPartial<ChartOptions>) {
   useEffect(() => {
     if (!ref.current) return;
     const c = createChart(ref.current, {
-      layout: {
-        background: { color: "transparent" },
-        textColor: "#8b93a7",
-        fontFamily: "Segoe UI, Microsoft YaHei, sans-serif",
-      },
-      grid: {
-        vertLines: { color: "rgba(35,42,58,0.5)" },
-        horzLines: { color: "rgba(35,42,58,0.5)" },
-      },
+      ...chartTheme(),
       crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: "#232a3a" },
-      timeScale: { borderColor: "#232a3a", timeVisible: false },
       autoSize: true,
       ...opts,
     });
     chartRef.current = c;
     setChart(c);
+    const off = onThemeChange(() => c.applyOptions(chartTheme()));
     return () => {
+      off();
       c.remove();
       chartRef.current = null;
       setChart(null);

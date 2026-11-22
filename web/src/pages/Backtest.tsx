@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { CandlestickSeries, LineSeries, createSeriesMarkers } from "lightweight-charts";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { AreaSeries, CandlestickSeries, LineSeries, createSeriesMarkers } from "lightweight-charts";
 import { api, type BacktestResult, type Bar } from "../api";
 import { Card, ErrorBanner, useChart } from "../components/ui";
 import { SearchBox } from "../components/SearchBox";
-import { DOWN, UP, fmtNum, fmtPct, fmtPrice, fmtSigned, todayYmd } from "../format";
+import { DOWN, UP, fmtNum, fmtPct, fmtPrice, fmtSigned, signedClass, todayYmd } from "../format";
 
 const STRAT: Record<string, { label: string; desc: string; params: [string, string, number][] }> = {
   ma_cross: { label: "均线交叉", desc: "快线上穿慢线持有", params: [["fast", "快线周期", 5], ["slow", "慢线周期", 20]] },
@@ -13,14 +14,18 @@ const STRAT: Record<string, { label: string; desc: string; params: [string, stri
 };
 
 export default function Backtest() {
-  const [symbol, setSymbol] = useState("000001");
-  const [strategy, setStrategy] = useState("ma_cross");
+  const [sp] = useSearchParams();
+  const [symbol, setSymbol] = useState(sp.get("code") || "000001");
+  const [strategy, setStrategy] = useState(
+    sp.get("strategy") && STRAT[sp.get("strategy")!] ? sp.get("strategy")! : "ma_cross");
   const [params, setParams] = useState<Record<string, string>>({ fast: "5", slow: "20" });
-  const [start, setStart] = useState("20240101");
-  const [end, setEnd] = useState(todayYmd());
-  const [capital, setCapital] = useState(1_000_000);
-  const [slip, setSlip] = useState(0);
-  const [mtv, setMtv] = useState(5000);
+  const [start, setStart] = useState(sp.get("start") || "20240101");
+  const [end, setEnd] = useState(sp.get("end") || todayYmd());
+  const [capital, setCapital] = useState(
+    Number(sp.get("capital")) > 0 ? Number(sp.get("capital")) : 1_000_000);
+  const [slip, setSlip] = useState(Number(sp.get("slippage_bps")) || 0);
+  const [mtv, setMtv] = useState(Number(sp.get("min_trade_value")) || 5000);
+  const didAutoRun = useRef(false);
   const [res, setRes] = useState<BacktestResult | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [err, setErr] = useState<unknown>(null);
@@ -48,6 +53,15 @@ export default function Backtest() {
     } catch (e) { setErr(e); }
     finally { setBusy(false); }
   };
+
+  // deep link: #/backtest?code=…&strategy=…&run=1 auto-runs once
+  useEffect(() => {
+    if (sp.get("run") === "1" && !didAutoRun.current) {
+      didAutoRun.current = true;
+      run();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -104,8 +118,8 @@ export default function Backtest() {
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
             <M label="期末资产" v={fmtNum(res.final_equity)} />
-            <M label="总收益" v={fmtPct(res.total_return * 100)} cls={res.total_return >= 0 ? "text-up" : "text-down"} />
-            <M label="年化" v={fmtPct(res.annual_return * 100)} cls={res.annual_return >= 0 ? "text-up" : "text-down"} />
+            <M label="总收益" v={fmtPct(res.total_return * 100)} cls={signedClass(res.total_return)} />
+            <M label="年化" v={fmtPct(res.annual_return * 100)} cls={signedClass(res.annual_return)} />
             <M label="最大回撤" v={fmtPct(res.max_drawdown * 100)} cls="text-down" />
             <M label="Sharpe" v={res.sharpe.toFixed(2)} />
             <M label="交易/胜率" v={`${res.num_trades}笔 / ${res.win_rate != null ? (res.win_rate * 100).toFixed(0) + "%" : "—"}`} />
@@ -117,6 +131,16 @@ export default function Backtest() {
           <Card title="净值 vs 买入持有">
             <EquityVsBench res={res} />
           </Card>
+
+          <Card title="回撤">
+            <Drawdown res={res} />
+          </Card>
+
+          {res.monthly_returns?.length > 0 && (
+            <Card title="月度收益">
+              <MonthlyHeatmap data={res.monthly_returns} />
+            </Card>
+          )}
 
           <Card title="价格与交易点">
             <PriceWithTrades bars={bars} res={res} />
@@ -144,7 +168,7 @@ export default function Backtest() {
                         <td className="num px-2 py-1.5">{t.shares}</td>
                         <td className="num px-2 py-1.5">{fmtNum(t.amount)}</td>
                         <td className="num px-2 py-1.5">{t.fee.toFixed(2)}</td>
-                        <td className={`num px-2 py-1.5 ${t.pnl != null ? (t.pnl >= 0 ? "text-up" : "text-down") : ""}`}>
+                        <td className={`num px-2 py-1.5 ${signedClass(t.pnl)}`}>
                           {t.pnl != null ? fmtSigned(t.pnl) : "—"}
                         </td>
                       </tr>
@@ -180,14 +204,16 @@ function M({ label, v, cls = "" }: { label: string; v: string; cls?: string }) {
   );
 }
 
+const toDay = (d: string) => (d || "").slice(0, 10) as string;
+
 function EquityVsBench({ res }: { res: BacktestResult }) {
   const { ref, chart } = useChart({ height: 320 });
   useEffect(() => {
     if (!chart) return;
     const s1 = chart.addSeries(LineSeries, { color: "#7b7ff2", lineWidth: 2, title: "策略" });
-    s1.setData(res.equity_curve.map((p) => ({ time: p.date, value: p.equity })));
+    s1.setData(res.equity_curve.map((p) => ({ time: toDay(p.date), value: p.equity })));
     const s2 = chart.addSeries(LineSeries, { color: "#8b93a7", lineWidth: 1, lineStyle: 2, title: "买入持有" });
-    s2.setData(res.benchmark.map((p) => ({ time: p.date, value: p.equity })));
+    s2.setData(res.benchmark.map((p) => ({ time: toDay(p.date), value: p.equity })));
     chart.timeScale().fitContent();
   }, [chart, res]);
   return (
@@ -209,9 +235,9 @@ function PriceWithTrades({ bars, res }: { bars: Bar[]; res: BacktestResult }) {
       upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN,
       wickUpColor: UP, wickDownColor: DOWN,
     });
-    s.setData(bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })));
+    s.setData(bars.map((b) => ({ time: toDay(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     const markers = res.trades.map((t) => ({
-      time: t.date,
+      time: toDay(t.date),
       position: t.side === "buy" ? "belowBar" as const : "aboveBar" as const,
       color: t.side === "buy" ? UP : DOWN,
       shape: t.side === "buy" ? "arrowUp" as const : "arrowDown" as const,
@@ -222,4 +248,78 @@ function PriceWithTrades({ bars, res }: { bars: Bar[]; res: BacktestResult }) {
   }, [chart, bars, res]);
   if (!bars.length) return <p className="py-4 text-center text-sm text-slate-500">K线数据不可用，无法绘制交易点</p>;
   return <div ref={ref} className="w-full" />;
+}
+
+function Drawdown({ res }: { res: BacktestResult }) {
+  const { ref, chart } = useChart({ height: 140 });
+  useEffect(() => {
+    if (!chart) return;
+    let peak = -Infinity;
+    const dd = res.equity_curve.map((p) => {
+      peak = Math.max(peak, p.equity);
+      return { time: toDay(p.date), value: (p.equity / peak - 1) * 100 };
+    });
+    const s = chart.addSeries(AreaSeries, {
+      lineColor: DOWN, topColor: "transparent",
+      bottomColor: "rgba(38,166,154,0.35)", lineWidth: 1,
+    });
+    s.setData(dd);
+    chart.timeScale().fitContent();
+  }, [chart, res]);
+  return <div ref={ref} className="w-full" />;
+}
+
+function MonthlyHeatmap({ data }: { data: { month: string; ret: number }[] }) {
+  const byYear = new Map<string, Map<number, number>>();
+  let maxAbs = 0;
+  for (const m of data) {
+    const [y, mo] = m.month.split("-");
+    if (!byYear.has(y)) byYear.set(y, new Map());
+    byYear.get(y)!.set(Number(mo), m.ret);
+    maxAbs = Math.max(maxAbs, Math.abs(m.ret));
+  }
+  const scale = maxAbs || 1;
+  const years = [...byYear.keys()].sort();
+  const cell = (r: number | undefined) => {
+    if (r == null) return { bg: "transparent", fg: "var(--color-slate-500)" };
+    const t = Math.min(Math.abs(r) / scale, 1);
+    const base = r >= 0 ? UP : DOWN;
+    return {
+      bg: `color-mix(in srgb, ${base} ${18 + 62 * t}%, transparent)`,
+      fg: "var(--color-slate-100)",
+    };
+  };
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-center text-xs">
+        <thead>
+          <tr className="text-slate-500">
+            <th className="py-1 text-left font-normal">年份</th>
+            {Array.from({ length: 12 }, (_, i) => (
+              <th key={i} className="num px-1 py-1 font-normal">{i + 1}月</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {years.map((y) => (
+            <tr key={y}>
+              <td className="num py-0.5 pr-2 text-left text-slate-400">{y}</td>
+              {Array.from({ length: 12 }, (_, i) => {
+                const r = byYear.get(y)!.get(i + 1);
+                const c = cell(r);
+                return (
+                  <td key={i} className="num px-1 py-0.5">
+                    <span className="block rounded px-1 py-0.5"
+                          style={{ background: c.bg, color: c.fg }}>
+                      {r != null ? `${r >= 0 ? "+" : ""}${r.toFixed(1)}` : ""}
+                    </span>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

@@ -104,6 +104,19 @@ def _downsample_curve(df: pd.DataFrame, equity: pd.Series,
             for i in idx]
 
 
+def _monthly_returns(df: pd.DataFrame, equity: pd.Series) -> list[dict[str, Any]]:
+    """Month-over-month equity returns from the full daily series."""
+    s = pd.Series(equity.values, index=pd.to_datetime(df["date"]))
+    month_last = s.resample("ME").last().dropna()
+    prev = month_last.shift(1)
+    out = []
+    for i, (ts, v) in enumerate(month_last.items()):
+        base = prev.iloc[i] if i > 0 else float(s.iloc[0])
+        out.append({"month": ts.strftime("%Y-%m"),
+                    "ret": round((v / base - 1) * 100, 3)})
+    return out
+
+
 def run_backtest(symbol: str, strategy: str = "ma_cross",
                  params: dict | None = None,
                  start_date: str = "", end_date: str = "",
@@ -219,5 +232,6 @@ def run_backtest(symbol: str, strategy: str = "ma_cross",
         "bars": len(df),
         **m,
         "equity_curve": _downsample_curve(df, equity),
+        "monthly_returns": _monthly_returns(df, equity),
         "trades": trades[-100:],
     }

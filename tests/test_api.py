@@ -179,6 +179,22 @@ def test_paper_account_isolation(client):
     assert pos[0]["code"] == "600519"
 
 
+def test_intraday(client, monkeypatch):
+    def fake(name, *a, **k):
+        if name == "get_intraday":
+            return {"symbol": "600519", "mode": "intraday",
+                    "prev_close": 1700.0,
+                    "points": [{"time": "09:30", "price": 1701.0, "volume": 1e4}]}, "fake"
+        return _fake_call(name, *a, **k)
+    monkeypatch.setattr(market_data, "call", fake)
+    api._cache._store.clear()
+    r = client.get("/api/intraday/600519")
+    assert r.status_code == 200
+    body = r.json()["data"]
+    assert body["mode"] == "intraday" and body["prev_close"] == 1700.0
+    assert body["points"][0]["time"] == "09:30"
+
+
 def test_scheduler_endpoint(client):
     r = client.get("/api/scheduler")
     assert r.status_code == 200

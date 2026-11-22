@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Card, ErrorBanner, Spinner } from "../components/ui";
-import { pctClass, todayYmd } from "../format";
+import { fmtAmount, pctClass, todayYmd } from "../format";
 
 const POOLS: [string, string][] = [
   ["zt", "涨停"], ["dt", "跌停"], ["zb", "炸板"], ["strong", "强势股"],
@@ -21,6 +22,35 @@ export default function Market() {
   );
 }
 
+const RE_CODE = /^(代码|code|股票代码|证券代码)$/i;
+const RE_PCT = /(涨跌幅|涨幅|幅|换手率|涨速|比)/;
+const RE_MONEY = /(成交额|金额|市值|封板资金|资金|净买|流入)/;
+const RE_PRICE = /(最新价|现价|价格|价|均价|封单|开盘|最高|最低|昨收)/;
+const RE_TIME6 = /时间$/;
+
+function fmtCell(c: string, v: unknown): { text: string; cls: string; code?: string } {
+  if (v == null || v === "") return { text: "—", cls: "text-slate-500" };
+  const s = String(v);
+  if (RE_CODE.test(c)) {
+    const m = s.replace(/\D/g, "").slice(-6);
+    return { text: s, cls: "text-slate-300", code: m || undefined };
+  }
+  const num = typeof v === "number" ? v : (s !== "" && !isNaN(Number(s)) ? Number(s) : null);
+  if (num != null && RE_PCT.test(c))
+    return { text: `${num.toFixed(2)}%`, cls: pctClass(num) };
+  if (num != null && RE_MONEY.test(c))
+    return { text: fmtAmount(num), cls: "" };
+  if (num != null && RE_TIME6.test(c) && /^\d{6}$/.test(s))
+    return { text: `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4)}`, cls: "" };
+  if (RE_TIME6.test(c) && /^\d{6}$/.test(s))
+    return { text: `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4)}`, cls: "" };
+  if (num != null && RE_PRICE.test(c))
+    return { text: num.toFixed(2), cls: "" };
+  if (num != null)
+    return { text: num.toLocaleString("zh-CN", { maximumFractionDigits: 2 }), cls: "" };
+  return { text: s, cls: "" };
+}
+
 function GenericTable({ rows }: { rows: Record<string, unknown>[] }) {
   const cols = useMemo(() => (rows.length ? Object.keys(rows[0]) : []), [rows]);
   if (!rows.length) return <p className="py-4 text-center text-sm text-slate-500">暂无数据</p>;
@@ -36,12 +66,14 @@ function GenericTable({ rows }: { rows: Record<string, unknown>[] }) {
           {rows.map((r, i) => (
             <tr key={i} className="border-b border-line/40 hover:bg-panel2">
               {cols.map((c) => {
-                const v = r[c];
-                const num = typeof v === "number";
-                const isPct = num && (c.includes("%") || c.includes("幅") || c.includes("比"));
+                const f = fmtCell(c, r[c]);
                 return (
-                  <td key={c} className={`num px-2 py-1.5 ${isPct ? pctClass(v as number) : ""}`}>
-                    {v == null ? "—" : num ? v.toLocaleString("zh-CN", { maximumFractionDigits: 4 }) : String(v)}
+                  <td key={c} className={`num px-2 py-1.5 ${f.cls}`}>
+                    {f.code ? (
+                      <Link to={`/stock/${f.code}`} className="text-sky-400 hover:underline">
+                        {f.text}
+                      </Link>
+                    ) : f.text}
                   </td>
                 );
               })}
