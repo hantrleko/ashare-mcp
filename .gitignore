@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 .venv/
 __pycache__/
 *.pyc
@@ -18,7 +18,7 @@ dist/
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo
-data/
+/data/
 *.db
 *.db-shm
 *.db-wal
