@@ -8,7 +8,7 @@ import { SearchBox } from "../components/SearchBox";
 import { Field, M, inp, toDay, DrawdownChart, MonthlyHeatmap } from "../components/bt_shared";
 import BtPortfolio from "./BtPortfolio";
 import BtScan from "./BtScan";
-import { DOWN, UP, fmtNum, fmtPct, fmtPrice, fmtSigned, signedClass, todayYmd } from "../format";
+import { DOWN, UP, ddClass, fmtDD, fmtNum, fmtPct, fmtPrice, fmtSigned, signedClass, todayYmd } from "../format";
 
 const STRAT: Record<string, { label: string; desc: string; params: [string, string, number][] }> = {
   ma_cross: { label: "均线交叉", desc: "快线上穿慢线持有", params: [["fast", "快线周期", 5], ["slow", "慢线周期", 20]] },
@@ -171,7 +171,7 @@ function SingleBacktest({ sp }: { sp: URLSearchParams }) {
             <M label="期末资产" v={fmtNum(res.final_equity)} />
             <M label="总收益" v={fmtPct(res.total_return * 100)} cls={signedClass(res.total_return)} />
             <M label="年化" v={fmtPct(res.annual_return * 100)} cls={signedClass(res.annual_return)} />
-            <M label="最大回撤" v={fmtPct(res.max_drawdown * 100)} cls="text-down" />
+            <M label="最大回撤" v={fmtDD(res.max_drawdown * 100)} cls={ddClass(res.max_drawdown)} />
             <M label="Sharpe" v={res.sharpe.toFixed(2)} />
             <M label="交易/胜率" v={`${res.num_trades}笔 / ${res.win_rate != null ? (res.win_rate * 100).toFixed(0) + "%" : "—"}`} />
           </div>

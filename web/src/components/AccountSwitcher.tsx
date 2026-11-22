@@ -4,9 +4,11 @@ import { api, ApiError } from "../api";
 import { useAccount } from "../account";
 import { useToast } from "./Toast";
 import { fmtAmount } from "../format";
+import { NEED_KEY, useCanMutate } from "../auth";
 
 export function AccountSwitcher() {
   const { account, accounts, setAccount, refresh } = useAccount();
+  const canMutate = useCanMutate();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState(false);
@@ -55,7 +57,9 @@ export function AccountSwitcher() {
           ))}
           <button
             onClick={() => { setOpen(false); setModal(true); }}
-            className="w-full border-t border-line px-3 py-2 text-left text-sm text-up hover:bg-panel2"
+            disabled={!canMutate}
+            title={canMutate ? "" : NEED_KEY}
+            className="w-full border-t border-line px-3 py-2 text-left text-sm text-up hover:bg-panel2 disabled:opacity-40"
           >
             ＋ 新建账户
           </button>

@@ -22,6 +22,14 @@ def test_tools_registered():
         "run_backtest", "run_portfolio_backtest", "scan_backtest_params",
         "provider_status",
         "screen_stocks", "list_industries",
+        "arena_register", "arena_leaderboard",
     }
     assert expected <= names, f"missing: {expected - names}"
-    assert len(names) == len(expected)  # 32 tools
+    assert len(names) == len(expected)  # 34 tools
+
+
+def test_reason_params_present():
+    import inspect
+    for fn in (server.paper_buy, server.paper_sell, server.paper_add_trigger):
+        fn = getattr(fn, "fn", fn)
+        assert "reason" in inspect.signature(fn).parameters

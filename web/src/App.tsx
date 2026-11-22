@@ -2,6 +2,7 @@ import { Suspense, lazy, useState } from "react";
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import { AccountProvider } from "./account";
 import { AccountSwitcher } from "./components/AccountSwitcher";
+import { KeyButton } from "./components/KeyButton";
 import { SearchBox } from "./components/SearchBox";
 import { ToastProvider } from "./components/Toast";
 import { MarketStatusPill } from "./components/liveness";
@@ -14,6 +15,8 @@ const Paper = lazy(() => import("./pages/Paper"));
 const Backtest = lazy(() => import("./pages/Backtest"));
 const Market = lazy(() => import("./pages/Market"));
 const Screener = lazy(() => import("./pages/Screener"));
+const Arena = lazy(() => import("./pages/Arena"));
+const ArenaAgent = lazy(() => import("./pages/ArenaDetail"));
 
 const LINKS = [
   { to: "/", label: "首页" },
@@ -21,6 +24,7 @@ const LINKS = [
   { to: "/screener", label: "选股" },
   { to: "/paper", label: "模拟盘" },
   { to: "/backtest", label: "回测" },
+  { to: "/arena", label: "竞技场" },
 ];
 
 function ThemeToggle() {
@@ -45,8 +49,10 @@ export default function App() {
         <div className="flex min-h-full flex-col">
           <header className="sticky top-0 z-30 border-b border-line bg-bg/95 backdrop-blur">
             <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
-              <NavLink to="/" className="flex items-center gap-2 text-base font-semibold text-slate-100">
-                <span className="text-up">▲</span>A股研究台
+              <NavLink to="/" className="flex items-center gap-2 whitespace-nowrap text-base font-semibold text-slate-100">
+                <span className="text-up">▲</span>
+                <span className="sm:hidden">A股</span>
+                <span className="hidden sm:inline">A股研究台</span>
               </NavLink>
               <MarketStatusPill />
               <nav className="hidden items-center gap-1 sm:flex">
@@ -75,6 +81,7 @@ export default function App() {
                 >
                   ⌕
                 </button>
+                <KeyButton />
                 <ThemeToggle />
               </div>
             </div>
@@ -94,6 +101,8 @@ export default function App() {
               <Route path="/screener" element={<Screener />} />
               <Route path="/paper" element={<Paper />} />
               <Route path="/backtest" element={<Backtest />} />
+              <Route path="/arena" element={<Arena />} />
+              <Route path="/arena/:id" element={<ArenaAgent />} />
             </Routes>
             </Suspense>
           </main>

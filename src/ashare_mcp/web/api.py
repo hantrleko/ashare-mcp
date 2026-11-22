@@ -8,13 +8,15 @@ Run: ``python -m ashare_mcp.web`` (uvicorn, default http://127.0.0.1:8600).
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -65,6 +67,72 @@ def _call(name: str, *args: Any, ttl: float = 0.0, **kwargs: Any) -> tuple[Any, 
         return load()
     key_args = tuple(tuple(a) if isinstance(a, list) else a for a in args)
     return _cache.get((name, key_args, tuple(sorted(kwargs.items()))), ttl, load)
+
+
+# ---------- auth + rate limiting (public mode only) ----------
+
+PUBLIC = os.environ.get("ASHARE_WEB_PUBLIC") == "1"
+_ADMIN_KEY = os.environ.get("ASHARE_ADMIN_KEY", "")
+
+# token-bucket limits (per minute)
+RATE_MUT = 30      # mutations, keyed by API key else IP
+RATE_HEAVY = 6     # /api/screen + /api/backtest* per IP
+RATE_GET = 120     # other GETs per IP
+
+_buckets: dict[tuple[str, str], list[float]] = {}
+_buckets_lock = threading.Lock()
+
+
+def _bucket(key: tuple[str, str], limit: int, now: float) -> float:
+    """Token bucket: returns seconds to wait, or 0.0 when allowed."""
+    with _buckets_lock:
+        cutoff = now - 60.0
+        if len(_buckets) > 10_000:
+            for k in [k for k, v in _buckets.items() if not v or v[-1] < cutoff]:
+                del _buckets[k]
+        hits = _buckets.setdefault(key, [])
+        while hits and hits[0] < cutoff:
+            hits.pop(0)
+        if len(hits) >= limit:
+            return max(hits[0] + 60.0 - now, 1.0)
+        hits.append(now)
+        return 0.0
+
+
+def _bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    return auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+
+
+def _role(request: Request) -> tuple[str, str | None]:
+    """(role, account_id) — admin | agent | anonymous."""
+    raw = _bearer(request)
+    if not raw:
+        return "anonymous", None
+    if _ADMIN_KEY and hmac.compare_digest(raw, _ADMIN_KEY):
+        return "admin", None
+    acct = _account_store().verify_key(raw)
+    return ("agent", acct) if acct else ("anonymous", None)
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _require_mutation(request: Request, account: str | None,
+                      account_scoped: bool = True) -> None:
+    """Public-mode guard for mutating endpoints (no-op locally)."""
+    if not PUBLIC:
+        return
+    role, key_acct = _role(request)
+    if role == "admin":
+        return
+    if role == "anonymous":
+        raise HTTPException(401, "需要 API Key（Authorization: Bearer …）")
+    if not account_scoped:
+        raise HTTPException(403, "agent key 无权执行该操作")
+    if key_acct != (account or "default"):
+        raise HTTPException(403, "agent key 只能操作自己的账户")
 
 
 def _err(e: Exception) -> HTTPException:
@@ -141,6 +209,7 @@ def _mutate(fn: Callable[..., Any], *args: Any, account: str = "default",
 class TradeIn(BaseModel):
     symbol: str
     shares: int
+    reason: str = ""
 
 
 class TriggerIn(BaseModel):
@@ -150,6 +219,7 @@ class TriggerIn(BaseModel):
     trigger_price: float
     condition: str = ">="
     note: str = ""
+    reason: str = ""
 
 
 class ResetIn(BaseModel):
@@ -211,12 +281,38 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    if PUBLIC and not _ADMIN_KEY:
+        raise RuntimeError(
+            "ASHARE_WEB_PUBLIC=1 requires ASHARE_ADMIN_KEY to be set")
     from . import scheduler
     scheduler.start()
     yield
 
 
 app = FastAPI(title="ashare-mcp web", version="0.3.0", lifespan=_lifespan)
+
+
+@app.middleware("http")
+async def _rate_limit(request: Request, call_next):
+    if not PUBLIC:
+        return await call_next(request)
+    path = request.url.path
+    now = time.monotonic()
+    ip = _client_ip(request)
+    if path == "/api/screen" or path.startswith("/api/backtest"):
+        wait = _bucket(("heavy", ip), RATE_HEAVY, now)
+    elif request.method != "GET":
+        # only a verified key gets its own bucket; anything else counts per IP
+        role, acct = _role(request)
+        ident = ("admin" if role == "admin" else acct) or ip
+        wait = _bucket(("mut", ident), RATE_MUT, now)
+    else:
+        wait = _bucket(("get", ip), RATE_GET, now)
+    if wait > 0:
+        return JSONResponse(status_code=429,
+                            content={"detail": "请求过于频繁，请稍后重试"},
+                            headers={"Retry-After": str(int(wait) + 1)})
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)
@@ -356,38 +452,48 @@ def paper_history(account: str = "default") -> dict[str, Any]:
 
 
 @app.post("/api/paper/buy")
-def paper_buy(body: TradeIn, account: str = "default") -> dict[str, Any]:
+def paper_buy(body: TradeIn, request: Request,
+              account: str = "default") -> dict[str, Any]:
+    _require_mutation(request, account)
     return _mutate(PaperAccount.buy, body.symbol, body.shares,
-                   account=account)
+                   reason=body.reason, account=account)
 
 
 @app.post("/api/paper/sell")
-def paper_sell(body: TradeIn, account: str = "default") -> dict[str, Any]:
+def paper_sell(body: TradeIn, request: Request,
+               account: str = "default") -> dict[str, Any]:
+    _require_mutation(request, account)
     return _mutate(PaperAccount.sell, body.symbol, body.shares,
-                   account=account)
+                   reason=body.reason, account=account)
 
 
 @app.post("/api/paper/triggers")
-def paper_add_trigger(body: TriggerIn, account: str = "default") -> dict[str, Any]:
+def paper_add_trigger(body: TriggerIn, request: Request,
+                      account: str = "default") -> dict[str, Any]:
+    _require_mutation(request, account)
     return _mutate(PaperAccount.add_trigger, body.symbol, body.side,
                    body.shares, body.trigger_price, body.condition,
-                   body.note, account=account)
+                   body.note, body.reason, account=account)
 
 
 @app.delete("/api/paper/triggers/{trigger_id}")
-def paper_cancel_trigger(trigger_id: str,
+def paper_cancel_trigger(trigger_id: str, request: Request,
                          account: str = "default") -> dict[str, Any]:
+    _require_mutation(request, account)
     return _mutate(PaperAccount.cancel_trigger, trigger_id,
                    account=account)
 
 
 @app.post("/api/paper/check")
-def paper_check(account: str = "default") -> dict[str, Any]:
+def paper_check(request: Request, account: str = "default") -> dict[str, Any]:
+    _require_mutation(request, account)
     return _mutate(PaperAccount.check_triggers, account=account)
 
 
 @app.post("/api/paper/reset")
-def paper_reset(body: ResetIn, account: str = "default") -> dict[str, Any]:
+def paper_reset(body: ResetIn, request: Request,
+                account: str = "default") -> dict[str, Any]:
+    _require_mutation(request, account)
     return _mutate(PaperAccount.reset, body.capital, account=account)
 
 
@@ -419,18 +525,22 @@ def accounts_list() -> dict[str, Any]:
 
 
 @app.post("/api/accounts")
-def accounts_create(body: AccountIn) -> dict[str, Any]:
+def accounts_create(body: AccountIn, request: Request) -> dict[str, Any]:
+    _require_mutation(request, None, account_scoped=False)
     return _store_call(_account_store().create, body.name, body.capital,
                        body.id or None)
 
 
 @app.patch("/api/accounts/{account_id}")
-def accounts_rename(account_id: str, body: RenameIn) -> dict[str, Any]:
+def accounts_rename(account_id: str, body: RenameIn,
+                    request: Request) -> dict[str, Any]:
+    _require_mutation(request, account_id)
     return _store_call(_account_store().rename, account_id, body.name)
 
 
 @app.delete("/api/accounts/{account_id}")
-def accounts_delete(account_id: str) -> dict[str, Any]:
+def accounts_delete(account_id: str, request: Request) -> dict[str, Any]:
+    _require_mutation(request, None, account_scoped=False)
     res = _store_call(_account_store().delete, account_id)
     with _locks_guard:
         _accts.pop(account_id, None)
@@ -439,6 +549,75 @@ def accounts_delete(account_id: str) -> dict[str, Any]:
 
 
 # ---------- scheduler ----------
+
+# ---------- auth / arena ----------
+
+@app.get("/api/auth/me")
+def auth_me(request: Request) -> dict[str, Any]:
+    role, acct = _role(request)
+    return {"public": PUBLIC, "role": role, "account": acct}
+
+
+class ArenaRegisterIn(BaseModel):
+    name: str
+    model: str = ""
+    capital: float = 1_000_000.0
+    id: str | None = None
+
+
+@app.post("/api/arena/agents")
+def arena_register(body: ArenaRegisterIn, request: Request) -> dict[str, Any]:
+    _require_mutation(request, None, account_scoped=False)
+    try:
+        acct = _account_store().create(
+            body.name, body.capital, body.id or None,
+            kind="agent", model=body.model, arena=True)
+        key = _account_store().create_key(acct["id"], label="first")
+        return {"account": acct, "api_key": key["api_key"]}
+    except (KeyError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/arena/leaderboard")
+def arena_leaderboard(benchmark: str = "sh000300") -> dict[str, Any]:
+    from ..trading.arena import leaderboard
+    try:
+        key = ("arena_lb", benchmark)
+        return _cache.get(key, TTL_QUOTE,
+                          lambda: leaderboard(benchmark, _account_store()))
+    except Exception as e:
+        raise _err(e)
+
+
+@app.get("/api/arena/agents/{account_id}")
+def arena_agent(account_id: str,
+                benchmark: str = "sh000300") -> dict[str, Any]:
+    from ..trading.arena import agent_detail
+    try:
+        return agent_detail(account_id, benchmark, _account_store())
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise _err(e)
+
+
+@app.post("/api/arena/agents/{account_id}/keys")
+def arena_new_key(account_id: str, request: Request) -> dict[str, Any]:
+    _require_mutation(request, None, account_scoped=False)
+    try:
+        return _account_store().create_key(account_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/arena/agents/{account_id}/keys/revoke")
+def arena_revoke(account_id: str, request: Request) -> dict[str, Any]:
+    _require_mutation(request, None, account_scoped=False)
+    if not _account_store().exists(account_id):
+        raise HTTPException(status_code=404,
+                            detail=f"unknown account {account_id!r}")
+    return {"revoked": _account_store().revoke_keys(account_id)}
+
 
 @app.get("/api/scheduler")
 def scheduler_status() -> dict[str, Any]:

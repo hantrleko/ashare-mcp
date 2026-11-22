@@ -6,7 +6,7 @@ import { Card, ErrorBanner } from "../components/ui";
 import { useChart } from "../components/chart";
 import { SearchBox } from "../components/SearchBox";
 import { Field, M, inp, toDay, DrawdownChart, MonthlyHeatmap } from "../components/bt_shared";
-import { DOWN, UP, fmtNum, fmtPct, fmtSigned, signedClass, todayYmd } from "../format";
+import { DOWN, UP, ddClass, fmtDD, fmtNum, fmtPct, fmtSigned, signedClass, todayYmd } from "../format";
 
 const BENCH = [
   { k: "sh000300", label: "沪深300" },
@@ -118,7 +118,7 @@ function PfResult({ res, names }: { res: PortfolioResult; names: Record<string, 
         <M label="年化" v={fmtPct(res.annual_return * 100)} cls={signedClass(res.annual_return)} />
         <M label="基准年化" v={fmtPct(res.benchmark_annual_return * 100)} cls={signedClass(res.benchmark_annual_return)} />
         <M label="超额年化" v={fmtPct(res.excess_annual * 100)} cls={signedClass(res.excess_annual)} />
-        <M label="最大回撤" v={fmtPct(res.max_drawdown * 100)} cls="text-down" />
+        <M label="最大回撤" v={fmtDD(res.max_drawdown * 100)} cls={ddClass(res.max_drawdown)} />
         <M label="年换手" v={res.annual_turnover != null ? res.annual_turnover.toFixed(2) + "×" : "—"} />
         <M label="调仓/拦截" v={`${res.num_rebalances}次 / ${res.blocked_orders}笔`} />
       </div>

@@ -4,7 +4,7 @@ import { api, type ScanMetrics, type ScanResult } from "../api";
 import { Card, ErrorBanner } from "../components/ui";
 import { SearchBox } from "../components/SearchBox";
 import { Field, inp } from "../components/bt_shared";
-import { DOWN, UP, fmtPct, signedClass, todayYmd } from "../format";
+import { DOWN, UP, ddClass, fmtDD, fmtPct, signedClass, todayYmd } from "../format";
 
 const SCAN_PARAMS: Record<string, [string, string, number, number, number][]> = {
   // key, label, default start, default stop, default step
@@ -130,7 +130,10 @@ export default function BtScan() {
 
 const fmtM = (k: keyof ScanMetrics, v: number) =>
   k === "num_trades" ? String(v)
-    : k === "sharpe" ? v.toFixed(2) : fmtPct(v * 100);
+    : k === "sharpe" ? v.toFixed(2)
+    : k === "max_drawdown" ? fmtDD(v * 100) : fmtPct(v * 100);
+const clsM = (k: keyof ScanMetrics, v: number) =>
+  k === "max_drawdown" ? ddClass(v) : signedClass(v);
 
 function ScanOut({ res, metric, sortKey, setSortKey }: {
   res: ScanResult; metric: string;
@@ -200,16 +203,16 @@ function ScanOut({ res, metric, sortKey, setSortKey }: {
                       {Object.entries(r.params).map(([k, v]) => `${k}=${v}`).join(" ")}
                       {isBest && <span className="ml-1 text-accent">★</span>}
                     </td>
-                    <td className={`num px-2 py-1.5 ${signedClass(r.is[metric as keyof ScanMetrics])}`}>
+                    <td className={`num px-2 py-1.5 ${clsM(metric as keyof ScanMetrics, r.is[metric as keyof ScanMetrics])}`}>
                       {fmtM(metric as keyof ScanMetrics, r.is[metric as keyof ScanMetrics])}
                     </td>
-                    <td className={`num px-2 py-1.5 ${signedClass(r.oos[metric as keyof ScanMetrics])}`}>
+                    <td className={`num px-2 py-1.5 ${clsM(metric as keyof ScanMetrics, r.oos[metric as keyof ScanMetrics])}`}>
                       {fmtM(metric as keyof ScanMetrics, r.oos[metric as keyof ScanMetrics])}
                     </td>
                     {["total_return", "annual_return", "sharpe", "max_drawdown", "num_trades"]
                       .filter((m) => m !== metric).slice(0, 3)
                       .map((m) => (
-                        <td key={m} className={`num px-2 py-1.5 ${signedClass(r.is[m as keyof ScanMetrics])}`}>
+                        <td key={m} className={`num px-2 py-1.5 ${clsM(m as keyof ScanMetrics, r.is[m as keyof ScanMetrics])}`}>
                           {fmtM(m as keyof ScanMetrics, r.is[m as keyof ScanMetrics])}
                         </td>))}
                   </tr>

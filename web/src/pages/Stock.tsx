@@ -11,6 +11,7 @@ import { useChart } from "../components/chart";
 import { DOWN, UP, fmtAmount, fmtPct, fmtPrice, fmtSigned, todayYmd } from "../format";
 import { useToast } from "../components/Toast";
 import { useAccount } from "../account";
+import { NEED_KEY, useCanMutate } from "../auth";
 
 type RangeKey = "1y" | "3y" | "5y" | "all";
 type Indicator = "none" | "macd" | "rsi";
@@ -293,6 +294,7 @@ function QuickTrade({ code, quote, toast }: {
   const [sellable, setSellable] = useState(0);
   const price = quote?.price ?? 0;
   const { account } = useAccount();
+  const canMutate = useCanMutate();
 
   const refresh = useCallback(async () => {
     try {
@@ -351,14 +353,16 @@ function QuickTrade({ code, quote, toast }: {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button
-            disabled={busy || shares <= 0}
+            disabled={busy || shares <= 0 || !canMutate}
+            title={canMutate ? "" : NEED_KEY}
             onClick={() => trade("buy")}
             className="rounded bg-up/90 py-2 font-medium text-white hover:bg-up disabled:opacity-40"
           >
             买入
           </button>
           <button
-            disabled={busy || shares <= 0}
+            disabled={busy || shares <= 0 || !canMutate}
+            title={canMutate ? "" : NEED_KEY}
             onClick={() => trade("sell")}
             className="rounded bg-down/90 py-2 font-medium text-white hover:bg-down disabled:opacity-40"
           >

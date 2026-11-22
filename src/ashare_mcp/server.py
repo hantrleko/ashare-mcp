@@ -274,25 +274,29 @@ def paper_status(account: str = "default") -> dict[str, Any]:
 
 
 @mcp.tool()
-def paper_buy(symbol: str, shares: int, price: float | None = None, account: str = "default") -> dict[str, Any]:
+def paper_buy(symbol: str, shares: int, price: float | None = None,
+              account: str = "default", reason: str = "") -> dict[str, Any]:
     """Buy shares in the paper account. Lots of 100; T+1; price limits
     enforced. price=None -> fill at latest quote. Fees included.
     account: paper account id; default 'default'.
+    reason: why you are trading — shown on the arena replay.
 """
     try:
-        return _acct(account).buy(symbol, shares, price)
+        return _acct(account).buy(symbol, shares, price, reason=reason)
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_sell(symbol: str, shares: int, price: float | None = None, account: str = "default") -> dict[str, Any]:
+def paper_sell(symbol: str, shares: int, price: float | None = None,
+               account: str = "default", reason: str = "") -> dict[str, Any]:
     """Sell shares in the paper account. Only T+1-available shares can be
     sold. Lots of 100 unless closing the whole position.
     account: paper account id; default 'default'.
+    reason: why you are trading — shown on the arena replay.
 """
     try:
-        return _acct(account).sell(symbol, shares, price)
+        return _acct(account).sell(symbol, shares, price, reason=reason)
     except Exception as e:
         return _err(e)
 
@@ -333,7 +337,8 @@ def paper_reset(capital: float = 1_000_000.0, account: str = "default") -> dict[
 @mcp.tool()
 def paper_add_trigger(symbol: str, side: str, shares: int,
                       trigger_price: float, condition: str = ">=",
-                      note: str = "", account: str = "default") -> dict[str, Any]:
+                      note: str = "", account: str = "default",
+                      reason: str = "") -> dict[str, Any]:
     """Add a conditional (trigger) order to the paper account.
 
     - side: "buy" | "sell"; shares in lots of 100
@@ -343,10 +348,11 @@ def paper_add_trigger(symbol: str, side: str, shares: int,
     (status/positions/check_triggers). Fills go through the normal
     buy/sell path — T+1, price limits and fees still apply.
     account: paper account id; default 'default'.
+    reason: why you are trading — shown on the arena replay.
 """
     try:
         return _acct(account).add_trigger(symbol, side, shares,
-                                   trigger_price, condition, note)
+                                   trigger_price, condition, note, reason)
     except Exception as e:
         return _err(e)
 
@@ -408,6 +414,41 @@ def paper_create_account(name: str, capital: float = 1_000_000.0,
 
 
 # ---------------- backtest ----------------
+
+@mcp.tool()
+def arena_register(name: str, model: str = "", capital: float = 1_000_000.0,
+                   account_id: str = "") -> dict[str, Any]:
+    """Register a new AI agent in the trading arena. Creates a dedicated
+    paper account (kind=agent, arena=1) that trades via paper_buy /
+    paper_sell / paper_add_trigger on this account id. Arena accounts
+    cannot be reset — delete and re-register to start over.
+    name: display name; model: model label shown on the leaderboard
+    (e.g. 'claude-sonnet'); capital: starting capital CNY;
+    account_id: optional custom id (a-z0-9_-), auto-generated when empty.
+    Attach a 'reason' to every order — it is shown on the arena replay.
+"""
+    try:
+        acct = _store().create(name, capital, account_id or None,
+                               kind="agent", model=model, arena=True)
+        return {"account_id": acct["id"], "name": acct["name"],
+                "model": model, "initial_capital": acct["initial_capital"],
+                "note": "trades via paper_buy/paper_sell with account="
+                        f"'{acct['id']}'"}
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def arena_leaderboard(benchmark: str = "sh000300") -> dict[str, Any]:
+    """Agent arena leaderboard: all registered agents ranked by total
+    return, with excess vs benchmark, max drawdown, sharpe, trades,
+    win rate and turnover. Uses one batch quote for all held symbols."""
+    try:
+        from .trading.arena import leaderboard
+        return leaderboard(benchmark, _store())
+    except Exception as e:
+        return _err(e)
+
 
 @mcp.tool()
 def run_backtest(symbol: str, strategy: str = "ma_cross",

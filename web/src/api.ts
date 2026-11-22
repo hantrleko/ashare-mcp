@@ -8,10 +8,25 @@ export class ApiError extends Error {
   }
 }
 
+const KEY_LS = "ashare.key";
+
+export function getApiKey(): string {
+  try { return localStorage.getItem(KEY_LS) ?? ""; } catch { return ""; }
+}
+export function setApiKey(k: string) {
+  try {
+    if (k) localStorage.setItem(KEY_LS, k.trim());
+    else localStorage.removeItem(KEY_LS);
+  } catch { /* private mode */ }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const key = getApiKey();
+  const headers = new Headers(init?.headers);
+  if (key) headers.set("Authorization", `Bearer ${key}`);
   let r: Response;
   try {
-    r = await fetch(`/api${path}`, init);
+    r = await fetch(`/api${path}`, { ...init, headers });
   } catch {
     throw new ApiError(0, "网络错误：无法连接后端 (ashare_mcp.web 未启动?)");
   }
@@ -21,6 +36,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       const j = await r.json();
       if (j?.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
     } catch { /* keep status text */ }
+    if (r.status === 401) detail = `未授权 — 请在右上角 🔑 填入有效的 API Key（${detail}）`;
+    else if (r.status === 403) detail = `无权操作 — ${detail}`;
+    else if (r.status === 429) {
+      const wait = r.headers.get("Retry-After");
+      detail = `请求过于频繁，请 ${wait || "稍"} 秒后重试`;
+    }
     throw new ApiError(r.status, detail);
   }
   return r.json() as Promise<T>;
@@ -65,7 +86,7 @@ export interface Position {
 export interface Order {
   id: string; time: string; symbol: string; name?: string; side: string;
   shares: number; price: number; amount: number; fee: number;
-  realized_pnl?: number; status: string;
+  realized_pnl?: number; status: string; reason?: string;
 }
 
 export interface Trigger {
@@ -193,6 +214,33 @@ export interface ScreenResult {
 }
 export interface IndustryInfo { name: string; count: number }
 
+export interface AuthMe {
+  public: boolean; role: "admin" | "agent" | "anonymous";
+  account: string | null;
+}
+
+export interface ArenaRow {
+  id: string; name: string; model: string; rank: number;
+  equity: number; initial_capital: number; return: number;
+  excess: number | null; max_drawdown: number; sharpe: number | null;
+  num_trades: number; win_rate: number | null; turnover: number;
+  last_trade_at: string | null; days_active: number; position_count: number;
+}
+export interface ArenaLeaderboard {
+  as_of: string; benchmark: string; agents: ArenaRow[];
+  series: Record<string, EquityPoint[]>;
+  bench_series: { date: string; close: number }[];
+}
+export interface ArenaDetail extends ArenaRow {
+  created_at: string | null;
+  series: { date: string; equity: number; benchmark: number | null }[];
+  positions: { code: string; name: string; shares: number;
+               avg_cost: number; last_price: number; market_value: number;
+               pnl: number }[];
+  trades: Order[];
+  benchmark: string;
+}
+
 const enc = encodeURIComponent;
 
 export const api = {
@@ -246,12 +294,14 @@ export const api = {
     req<{ data: Trigger[] }>(`/paper/triggers?account=${enc(account)}`),
   paperHistory: (account: string) =>
     req<{ data: EquityPoint[] }>(`/paper/history?account=${enc(account)}`),
-  paperBuy: (account: string, symbol: string, shares: number) =>
+  paperBuy: (account: string, symbol: string, shares: number,
+             reason = "") =>
     req<Record<string, unknown>>(`/paper/buy?account=${enc(account)}`,
-      post({ symbol, shares })),
-  paperSell: (account: string, symbol: string, shares: number) =>
+      post({ symbol, shares, reason })),
+  paperSell: (account: string, symbol: string, shares: number,
+              reason = "") =>
     req<Record<string, unknown>>(`/paper/sell?account=${enc(account)}`,
-      post({ symbol, shares })),
+      post({ symbol, shares, reason })),
   paperAddTrigger: (account: string,
                     t: Omit<Trigger, "id" | "created_at" | "status">) =>
     req<Trigger>(`/paper/triggers?account=${enc(account)}`, post(t)),
@@ -272,6 +322,21 @@ export const api = {
 
   screen: (b: ScreenIn) => req<ScreenResult>("/screen", post(b)),
   industries: () => req<{ data: IndustryInfo[] }>("/industries"),
+
+  authMe: () => req<AuthMe>("/auth/me"),
+  arenaLeaderboard: (benchmark = "sh000300") =>
+    req<ArenaLeaderboard>(`/arena/leaderboard?benchmark=${enc(benchmark)}`),
+  arenaAgent: (id: string, benchmark = "sh000300") =>
+    req<ArenaDetail>(`/arena/agents/${enc(id)}?benchmark=${enc(benchmark)}`),
+  arenaRegister: (b: { name: string; model?: string; capital?: number;
+                       id?: string }) =>
+    req<{ account: { id: string; name: string }; api_key: string }>(
+      "/arena/agents", post(b)),
+  arenaNewKey: (id: string) =>
+    req<{ api_key: string }>(`/arena/agents/${enc(id)}/keys`, post({})),
+  arenaRevoke: (id: string) =>
+    req<{ revoked: number }>(`/arena/agents/${enc(id)}/keys/revoke`,
+      post({})),
 };
 
 function post(body: unknown): RequestInit {

@@ -7,9 +7,11 @@ import { fmtNum, fmtPrice, fmtSigned, signedClass } from "../format";
 import { useToast } from "../components/Toast";
 import { SearchBox } from "../components/SearchBox";
 import { useAccount } from "../account";
+import { NEED_KEY, useCanMutate } from "../auth";
 
 export default function Paper() {
   const toast = useToast();
+  const canMutate = useCanMutate();
   const { account, accounts, setAccount, refresh } = useAccount();
   const [st, setSt] = useState<PaperStatus | null>(null);
   const [pos, setPos] = useState<Position[]>([]);
@@ -61,6 +63,7 @@ export default function Paper() {
         <AccountHeader
           name={cur?.name ?? account}
           isDefault={account === "default"}
+          canMutate={canMutate}
           onRenamed={async (name) => {
             await api.accountRename(account, name);
             await refresh();
@@ -120,7 +123,8 @@ export default function Paper() {
                     <td className="px-2 py-1.5">
                       <button
                         onClick={() => doSell(p.code)}
-                        disabled={p.available <= 0}
+                        disabled={p.available <= 0 || !canMutate}
+                        title={canMutate ? "" : NEED_KEY}
                         className="rounded border border-down/60 px-2 py-0.5 text-xs text-down hover:bg-down/20 disabled:opacity-30"
                       >
                         卖出全部可卖
@@ -135,7 +139,8 @@ export default function Paper() {
         ) : <p className="py-4 text-center text-sm text-slate-500">暂无持仓（在个股页快捷交易下单）</p>}
       </Card>
 
-      <TriggerPanel account={account} trigs={trigs} sched={sched} onChange={load} toast={toast} />
+      <TriggerPanel account={account} trigs={trigs} sched={sched}
+                    onChange={load} toast={toast} canMutate={canMutate} />
 
       <Card title="订单">
         {orders.length ? (
@@ -171,13 +176,14 @@ export default function Paper() {
         ) : <p className="py-4 text-center text-sm text-slate-500">暂无订单</p>}
       </Card>
 
-      <ResetCard account={account} onDone={() => { toast("ok", "账户已重置"); load(); }} />
+      <ResetCard account={account} canMutate={canMutate}
+                 onDone={() => { toast("ok", "账户已重置"); load(); }} />
     </div>
   );
 }
 
-function AccountHeader({ name, isDefault, onRenamed, onDeleted, onError }: {
-  name: string; isDefault: boolean;
+function AccountHeader({ name, isDefault, canMutate = true, onRenamed, onDeleted, onError }: {
+  name: string; isDefault: boolean; canMutate?: boolean;
   onRenamed: (name: string) => Promise<void>;
   onDeleted: () => Promise<void>;
   onError: (msg: string) => void;
@@ -206,8 +212,9 @@ function AccountHeader({ name, isDefault, onRenamed, onDeleted, onError }: {
       ) : (
         <>
           <span className="font-medium text-slate-100">{name}</span>
-          <button onClick={() => setRenaming(true)}
-                  className="rounded border border-line px-2 py-1 text-xs text-slate-400 hover:bg-panel2">重命名</button>
+          <button onClick={() => setRenaming(true)} disabled={!canMutate}
+                  title={canMutate ? "" : NEED_KEY}
+                  className="rounded border border-line px-2 py-1 text-xs text-slate-400 hover:bg-panel2 disabled:opacity-40">重命名</button>
           {!isDefault && (
             confirmDel ? (
               <>
@@ -223,8 +230,9 @@ function AccountHeader({ name, isDefault, onRenamed, onDeleted, onError }: {
                         className="rounded border border-line px-2 py-1 text-xs">取消</button>
               </>
             ) : (
-              <button onClick={() => setConfirmDel(true)}
-                      className="rounded border border-red-800 px-2 py-1 text-xs text-red-400 hover:bg-red-950/40">删除</button>
+              <button onClick={() => setConfirmDel(true)} disabled={!canMutate}
+                      title={canMutate ? "" : NEED_KEY}
+                      className="rounded border border-red-800 px-2 py-1 text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-40">删除</button>
             )
           )}
         </>
@@ -314,10 +322,11 @@ function EquityChart({ pts }: { pts: EquityPoint[] }) {
   return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
 
-function TriggerPanel({ account, trigs, sched, onChange, toast }: {
+function TriggerPanel({ account, trigs, sched, onChange, toast, canMutate = true }: {
   account: string; trigs: Trigger[]; sched: SchedulerStatus | null;
   onChange: () => void;
   toast: (k: "ok" | "err", t: string) => void;
+  canMutate?: boolean;
 }) {
   const [sym, setSym] = useState("");
   const [side, setSide] = useState("buy");
@@ -398,7 +407,8 @@ function TriggerPanel({ account, trigs, sched, onChange, toast }: {
         <input type="number" step={100} min={100} value={shares}
           onChange={(e) => setShares(Number(e.target.value))}
           className="num w-24 rounded border border-line bg-panel2 px-2 py-1.5 outline-none" />
-        <button onClick={add} disabled={busy || !sym.trim()}
+        <button onClick={add} disabled={busy || !sym.trim() || !canMutate}
+          title={canMutate ? "" : NEED_KEY}
           className="rounded bg-slate-700 px-3 py-1.5 hover:bg-slate-600 disabled:opacity-40">
           添加
         </button>
@@ -443,7 +453,9 @@ function TriggerPanel({ account, trigs, sched, onChange, toast }: {
   );
 }
 
-function ResetCard({ account, onDone }: { account: string; onDone: () => void }) {
+function ResetCard({ account, canMutate = true, onDone }: {
+  account: string; canMutate?: boolean; onDone: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [cap, setCap] = useState(1_000_000);
   const reset = async () => {
@@ -454,7 +466,9 @@ function ResetCard({ account, onDone }: { account: string; onDone: () => void })
   return (
     <Card title="重置账户">
       {!open ? (
-        <button onClick={() => setOpen(true)} className="rounded border border-red-800 px-3 py-1.5 text-sm text-red-400 hover:bg-red-950/40">
+        <button onClick={() => setOpen(true)} disabled={!canMutate}
+          title={canMutate ? "" : NEED_KEY}
+          className="rounded border border-red-800 px-3 py-1.5 text-sm text-red-400 hover:bg-red-950/40 disabled:opacity-40">
           重置账户（清空持仓与订单）
         </button>
       ) : (

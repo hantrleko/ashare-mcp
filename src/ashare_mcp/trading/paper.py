@@ -165,7 +165,7 @@ class PaperAccount:
             t["status"] = "filling"
             try:
                 fn = self.buy if t["side"] == "buy" else self.sell
-                res = fn(t["symbol"], t["shares"])
+                res = fn(t["symbol"], t["shares"], reason=t.get("reason", ""))
                 t["status"] = "filled"
                 t["filled_price"] = res["price"]
                 t["filled_at"] = datetime.now().isoformat(timespec="seconds")
@@ -175,10 +175,14 @@ class PaperAccount:
         if self.state.get("triggers"):
             self._save()
 
+    @staticmethod
+    def _reason(reason: str) -> str:
+        return str(reason or "").strip()[:500]
+
     @_reloaded
     def add_trigger(self, symbol: str, side: str, shares: int,
                     trigger_price: float, condition: str = ">=",
-                    note: str = "") -> dict[str, Any]:
+                    note: str = "", reason: str = "") -> dict[str, Any]:
         self._rollover()
         if side not in ("buy", "sell"):
             raise ValueError("side must be buy|sell")
@@ -198,6 +202,7 @@ class PaperAccount:
             "condition": condition,
             "trigger_price": float(trigger_price),
             "note": note,
+            "reason": self._reason(reason),
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "status": "pending",
         }
@@ -235,13 +240,15 @@ class PaperAccount:
     def reset(self, capital: float = 1_000_000.0) -> dict[str, Any]:
         if float(capital) <= 0:
             raise ValueError("capital must be positive")
+        if self.store.is_arena(self.account_id):
+            raise ValueError("竞技场账户不可重置，可删除后重新报名")
         self.state = self._fresh(capital)
         self._save()
         return {"status": "reset", "initial_capital": capital}
 
     @_reloaded
     def buy(self, symbol: str, shares: int,
-            price: float | None = None) -> dict[str, Any]:
+            price: float | None = None, reason: str = "") -> dict[str, Any]:
         self._rollover()
         code6, mkt = normalize_symbol(symbol)
         shares = int(shares)
@@ -276,7 +283,7 @@ class PaperAccount:
 
         self._record_order(symbol=code6, name=pos["name"], side="buy",
                            shares=shares, price=px, amount=amount, fee=fee,
-                           status="filled")
+                           reason=self._reason(reason), status="filled")
         self._save()
         return {"status": "filled", "side": "buy", "code": code6,
                 "shares": shares, "price": px, "amount": amount, "fee": fee,
@@ -284,7 +291,7 @@ class PaperAccount:
 
     @_reloaded
     def sell(self, symbol: str, shares: int,
-             price: float | None = None) -> dict[str, Any]:
+             price: float | None = None, reason: str = "") -> dict[str, Any]:
         self._rollover()
         code6, _ = normalize_symbol(symbol)
         shares = int(shares)
@@ -317,7 +324,8 @@ class PaperAccount:
 
         self._record_order(symbol=code6, name=pos.get("name", ""), side="sell",
                            shares=shares, price=px, amount=amount, fee=fee,
-                           realized_pnl=realized, status="filled")
+                           realized_pnl=realized,
+                           reason=self._reason(reason), status="filled")
         if pos["shares"] <= 0:
             del self.state["positions"][code6]
         self._save()

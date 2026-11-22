@@ -37,6 +37,15 @@ export function fmtNum(v: number | null | undefined, digits = 0): string {
   });
 }
 
+/** Drawdown: always non-positive — show without "+" and keep 0 neutral. */
+export function fmtDD(v: number | null | undefined, digits = 2): string {
+  if (v == null || Number.isNaN(v)) return "—";
+  return `${v.toFixed(digits)}%`;
+}
+export function ddClass(v: number | null | undefined): string {
+  return v != null && v < 0 ? "text-down" : "text-slate-300";
+}
+
 export function fmtSigned(v: number | null | undefined, digits = 0): string {
   if (v == null || Number.isNaN(v)) return "—";
   return `${v >= 0 ? "+" : ""}${fmtNum(v, digits)}`;
