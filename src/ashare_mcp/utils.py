@@ -147,3 +147,18 @@ def df_records(df: pd.DataFrame | None, limit: int | None = None,
             elif isinstance(v, pd.Timestamp):
                 row[k] = v.strftime("%Y-%m-%d")
     return records
+
+
+_REPORT_DATE_COLS = ("REPORT_DATE", "报告日", "报告期", "end_date")
+
+
+def latest_records(df: pd.DataFrame | None, limit: int) -> list[dict[str, Any]]:
+    """Newest ``limit`` report periods (sorted newest first) as records."""
+    if df is None or df.empty:
+        return []
+    col = next((c for c in _REPORT_DATE_COLS if c in df.columns), None)
+    if col is not None:
+        key = pd.to_datetime(df[col].astype(str), errors="coerce")
+        df = df.assign(_k=key).sort_values("_k", ascending=False,
+                                            na_position="last").drop(columns="_k")
+    return df_records(df.head(limit))

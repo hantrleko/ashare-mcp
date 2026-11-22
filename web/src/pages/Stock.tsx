@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   CandlestickSeries, HistogramSeries, LineSeries,
+  createSeriesMarkers,
   type ISeriesApi, type MouseEventParams,
 } from "lightweight-charts";
-import { api, type Bar, type Quote } from "../api";
+import { api, type Bar, type Order, type Quote } from "../api";
 import { boll, macd, rsi, sma, toPts } from "../indicators";
 import { Card, ErrorBanner, PctText, Skeleton, Spinner } from "../components/ui";
 import { useChart } from "../components/chart";
@@ -39,6 +40,27 @@ export default function Stock() {
   const [showBoll, setShowBoll] = useState(false);
   const [legend, setLegend] = useState<Bar | null>(null);
   const [tab, setTab] = useState("flow");
+  const { account } = useAccount();
+  const [cost, setCost] = useState<number | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [ovTick, setOvTick] = useState(0);
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const [pos, ord] = await Promise.all([
+          api.paperPositions(account), api.paperOrders(account, 200)]);
+        if (dead) return;
+        const p = pos.data.find((x) => x.code === code);
+        setCost(p && p.avg_cost > 0 ? p.avg_cost : null);
+        setOrders(ord.data.filter((o) => o.symbol === code));
+      } catch {
+        if (!dead) { setCost(null); setOrders([]); }
+      }
+    })();
+    return () => { dead = true; };
+  }, [code, account, ovTick]);
 
   const loadQuote = useCallback(async () => {
     try {
@@ -145,7 +167,7 @@ export default function Stock() {
               {legend && (
                 <span className="num ml-auto text-xs text-slate-400">
                   {legend.date} 开{fmtPrice(legend.open)} 高{fmtPrice(legend.high)}{" "}
-                  低{fmtPrice(legend.low)} 收{fmtPrice(legend.close)} 量{fmtAmount(legend.volume)}
+                  低{fmtPrice(legend.low)} 收{fmtPrice(legend.close)} 量{fmtAmount(legend.volume)}手
                 </span>
               )}
             </div>
@@ -153,7 +175,8 @@ export default function Stock() {
               <>
                 <ErrorBanner error={kErr} onRetry={loadKline} />
                 {bars.length > 0 && (
-                  <KChart bars={bars} ind={ind} boll={showBoll} onHover={setLegend} />
+                  <KChart bars={bars} ind={ind} boll={showBoll} onHover={setLegend}
+                          cost={cost} orders={orders} />
                 )}
               </>
             )}
@@ -162,7 +185,7 @@ export default function Stock() {
           {/* tabs */}
           <Card>
             <div className="mb-3 flex gap-1 border-b border-line text-sm">
-              {[["flow", "资金流向"], ["fin", "财务指标"], ["stmt", "三大报表"], ["factor", "因子快照"], ["ann", "公告"]].map(([k, l]) => (
+              {[["flow", "资金流向"], ["fin", "财务指标"], ["stmt", "三大报表"], ["peers", "同业对比"], ["factor", "因子快照"], ["ann", "公告"]].map(([k, l]) => (
                 <button
                   key={k}
                   onClick={() => setTab(k)}
@@ -175,12 +198,14 @@ export default function Stock() {
             {tab === "flow" && <FlowTab code={code} />}
             {tab === "fin" && <FinTab code={code} />}
             {tab === "stmt" && <StmtTab code={code} />}
+            {tab === "peers" && <PeersTab code={code} />}
             {tab === "factor" && <FactorTab code={code} />}
             {tab === "ann" && <AnnTab code={code} />}
           </Card>
         </div>
 
-        <QuickTrade code={code} quote={quote} toast={toast} />
+        <QuickTrade code={code} quote={quote} toast={toast}
+                    onTraded={() => setOvTick((t) => t + 1)} />
       </div>
     </div>
   );
@@ -215,8 +240,10 @@ function Seg({ options, value, onChange }: {
 
 /* ---------- main K chart ---------- */
 
-function KChart({ bars, ind, boll: showBoll, onHover }: {
-  bars: Bar[]; ind: Indicator; boll: boolean; onHover: (b: Bar | null) => void;
+function KChart({ bars, ind, boll: showBoll, onHover, cost, orders }: {
+  bars: Bar[]; ind: Indicator; boll: boolean;
+  onHover: (b: Bar | null) => void;
+  cost?: number | null; orders?: Order[];
 }) {
   const paneH = ind === "none" ? 0 : 120;
   const { ref, chart } = useChart({ height: 420 + paneH });
@@ -241,6 +268,30 @@ function KChart({ bars, ind, boll: showBoll, onHover }: {
       time: b.date, value: b.volume,
       color: b.close >= b.open ? "rgba(239,83,80,0.4)" : "rgba(38,166,154,0.4)",
     })));
+    // position overlay: dashed avg-cost line + buy/sell markers
+    if (cost != null && cost > 0) {
+      candle.createPriceLine({
+        price: cost, color: "#f0b90b", lineWidth: 1, lineStyle: 2,
+        axisLabelVisible: true,
+        title: `持仓成本 ${cost.toFixed(2)}`,
+      });
+    }
+    if (orders && orders.length) {
+      const barDates = new Set(bars.map((b) => b.date));
+      const markers = orders.flatMap((o) => {
+        const t = String(o.time).slice(0, 10);
+        if (!barDates.has(t)) return [];
+        const buy = o.side === "buy";
+        return [{
+          time: t,
+          position: buy ? "belowBar" as const : "aboveBar" as const,
+          color: buy ? up : down,
+          shape: buy ? "arrowUp" as const : "arrowDown" as const,
+          text: `${o.shares}`,
+        }];
+      }).sort((a, b) => a.time.localeCompare(b.time));
+      if (markers.length) createSeriesMarkers(candle, markers);
+    }
     // MAs
     for (const [n, c] of [[5, "#f0b90b"], [20, "#7b7ff2"], [60, "#aab2c0"]] as const) {
       const s = chart.addSeries(LineSeries, { color: c, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
@@ -277,16 +328,17 @@ function KChart({ bars, ind, boll: showBoll, onHover }: {
     chart.timeScale().fitContent();
     return () => chart.unsubscribeCrosshairMove(onMove);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chart, bars, ind, showBoll]);
+  }, [chart, bars, ind, showBoll, cost, orders]);
 
   return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
 
 /* ---------- quick trade ---------- */
 
-function QuickTrade({ code, quote, toast }: {
+function QuickTrade({ code, quote, toast, onTraded }: {
   code: string; quote: Quote | null;
   toast: (k: "ok" | "err", t: string) => void;
+  onTraded?: () => void;
 }) {
   const [shares, setShares] = useState(100);
   const [busy, setBusy] = useState(false);
@@ -320,6 +372,7 @@ function QuickTrade({ code, quote, toast }: {
         : await api.paperSell(account, code, shares);
       toast("ok", `${side === "buy" ? "买入" : "卖出"}成交 ${r.code} ${r.shares}股 @ ${r.price}`);
       refresh();
+      onTraded?.();
     } catch (e) {
       toast("err", `${side === "buy" ? "买入" : "卖出"}失败：${e instanceof Error ? e.message : e}`);
     } finally { setBusy(false); }
@@ -471,7 +524,79 @@ function FinTab({ code }: { code: string }) {
   return (
     <div>
       <div className="mb-2"><Seg options={[["按报告期", "按报告期"], ["按年度", "按年度"], ["按单季", "按单季"], ["累计报告期", "累计报告期"]]} value={ind} onChange={setInd} /></div>
-      {loading ? <Spinner /> : (<><ErrorBanner error={err} onRetry={reload} />{data && <GenericTable rows={data} />}<SrcCap src={src} /></>)}
+      {loading ? <Spinner /> : (<><ErrorBanner error={err} onRetry={reload} />{data && <FinChart rows={data} />}{data && <GenericTable rows={data} />}<SrcCap src={src} /></>)}
+    </div>
+  );
+}
+
+/** Financial trend chart: revenue & net-profit bars + ROE/GM% lines. */
+function FinChart({ rows }: { rows: Record<string, unknown>[] }) {
+  const { ref, chart } = useChart({ height: 240 });
+  useEffect(() => {
+    if (!chart || !rows.length) return;
+    const keys = Object.keys(rows[0]);
+    const find = (...pats: string[]) =>
+      keys.find((k) => pats.some((p) => k.includes(p)));
+    // real payload: East Money field codes (TOTALOPERATEREVE=PARENTNETPROFIT
+    // 等), 中文名 fallback
+    const dKey = find("REPORT_DATE", "报告期", "截止日期", "日期", "date");
+    const revK = find("TOTALOPERATEREVE", "营业总收入", "营业收入");
+    const npK = find("PARENTNETPROFIT", "归母净利润", "净利润");
+    const roeK = find("ROEJQ", "ROE", "净资产收益率");
+    const gmK = find("XSMLL", "销售毛利率", "毛利率");
+    if (!dKey || (!revK && !npK && !roeK && !gmK)) return;
+    const num = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const data = rows
+      .map((r) => ({ r, t: String(r[dKey] ?? "").slice(0, 10) }))
+      .filter((x) => x.t)
+      .sort((a, b) => a.t.localeCompare(b.t))
+      .slice(-12);
+    // auto-scale money columns to 亿 when magnitudes look like raw CNY
+    const moneyScale = ((k?: string) => {
+      if (!k) return 1;
+      const vals = data.map((x) => num(x.r[k])).filter((v): v is number => v != null && v > 0);
+      if (!vals.length) return 1;
+      const med = vals.sort((a, b) => a - b)[Math.floor(vals.length / 2)];
+      return med > 1e7 ? 1e-8 : med > 1e5 ? 1e-4 : 1;   // 元→亿 | 万元→亿
+    });
+    const rs = moneyScale(revK || npK);
+    const mk = (k: string | undefined, color: string, scale = 1) => {
+      if (!k) return;
+      const s = chart.addSeries(HistogramSeries, { color, priceFormat: { type: "volume" }, priceScaleId: "money" });
+      chart.priceScale("money").applyOptions({ scaleMargins: { top: 0.2, bottom: 0.2 }, visible: false });
+      s.setData(data.flatMap((x) => {
+        const v = num(x.r[k]);
+        return v == null ? [] : [{ time: x.t, value: v * scale }];
+      }));
+    };
+    mk(revK, "rgba(123,127,242,0.75)", rs);      // 营业总收入 (亿)
+    mk(npK, "rgba(240,185,11,0.85)", rs);        // 归母净利润 (亿)
+    chart.applyOptions({ leftPriceScale: { visible: true, borderColor: "rgba(148,163,184,0.4)" } });
+    const ln = (k: string | undefined, color: string) => {
+      if (!k) return;
+      const s = chart.addSeries(LineSeries, { color, lineWidth: 2, priceScaleId: "left", priceLineVisible: false, lastValueVisible: false });
+      s.setData(data.flatMap((x) => {
+        const v = num(x.r[k]);
+        return v == null ? [] : [{ time: x.t, value: v }];
+      }));
+    };
+    ln(roeK, "#ef5350");                          // ROE %
+    ln(gmK, "#26a69a");                           // 毛利率 %
+    chart.timeScale().fitContent();
+  }, [chart, rows]);
+  if (!rows.length) return null;
+  return (
+    <div className="mb-3">
+      <div className="mb-1 flex flex-wrap gap-3 text-xs text-slate-500">
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "rgba(123,127,242,0.75)" }} />营业总收入(亿)</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "rgba(240,185,11,0.85)" }} />归母净利润(亿)</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "#ef5350" }} />ROE%(右轴)</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "#26a69a" }} />毛利率%(右轴)</span>
+      </div>
+      <div ref={ref} className="w-full min-w-0 overflow-hidden" />
     </div>
   );
 }
@@ -561,6 +686,95 @@ function AnnTab({ code }: { code: string }) {
           <SrcCap src={src} />
         </>
       )}
+    </div>
+  );
+}
+
+/* ---------- industry peers tab ---------- */
+
+type PeerMetric = "pe_ttm" | "pb" | "roe_est" | "mkt_cap";
+const PEER_METRICS: [PeerMetric, string][] = [
+  ["pe_ttm", "PE(TTM)"], ["pb", "PB"], ["roe_est", "ROE估算%"], ["mkt_cap", "总市值"],
+];
+
+function PeersTab({ code }: { code: string }) {
+  const { data, err, loading, reload } = useLoader(
+    () => api.peers(code).then((r) => ({ data: r })), [code]);
+  const [sort, setSort] = useState<PeerMetric | "code">("mkt_cap");
+  const [asc, setAsc] = useState(false);
+  if (loading) return <Spinner />;
+  if (!data) return <ErrorBanner error={err} onRetry={reload} />;
+  const rows = [...data.peers].sort((a, b) => {
+    if (sort === "code") return a.code.localeCompare(b.code) * (asc ? 1 : -1);
+    const av = a[sort] ?? -Infinity, bv = b[sort] ?? -Infinity;
+    return (av - bv) * (asc ? 1 : -1);
+  });
+  const click = (k: PeerMetric | "code") => {
+    if (sort === k) setAsc(!asc); else { setSort(k); setAsc(k === "code"); }
+  };
+  const fmtM = (k: PeerMetric, v: number | null | undefined) =>
+    v == null ? "—" : k === "mkt_cap" ? fmtAmount(v)
+    : v.toFixed(k === "pb" ? 2 : 1);
+  return (
+    <div>
+      <ErrorBanner error={err} onRetry={reload} />
+      <div className="mb-2 text-xs text-slate-500">
+        {data.industry} · 共{data.count}家 · 显示市值前{data.peers.length}家 · 行业：申万一级；ROE为PB/PE估算
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {PEER_METRICS.map(([k, l]) => {
+          const p = data.stock.percentiles?.[k];
+          const med = data.medians?.[k];
+          return (
+            <div key={k} className="rounded border border-line bg-panel2 px-2 py-2">
+              <div className="flex items-baseline justify-between text-xs">
+                <span className="text-slate-500">{l}</span>
+                <span className="num">{p == null ? "—" : `${p.toFixed(0)}%`}</span>
+              </div>
+              <div className="mt-1 h-1.5 rounded bg-line/60">
+                <div className="h-1.5 rounded bg-[#7b7ff2]" style={{ width: `${p ?? 0}%` }} />
+              </div>
+              <div className="mt-1 text-[10px] text-slate-500">
+                行业中位 {fmtM(k, med)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="max-h-96 overflow-auto">
+        <table className="w-full whitespace-nowrap text-xs">
+          <thead className="sticky top-0 bg-panel">
+            <tr className="border-b border-line text-left text-slate-500">
+              <th className="cursor-pointer px-2 py-1.5 font-normal" onClick={() => click("code")}>代码</th>
+              <th className="px-2 py-1.5 font-normal">名称</th>
+              <th className="px-2 py-1.5 text-right font-normal">现价</th>
+              <th className="px-2 py-1.5 text-right font-normal">涨跌%</th>
+              {PEER_METRICS.map(([k, l]) => (
+                <th key={k} onClick={() => click(k)} className="cursor-pointer px-2 py-1.5 text-right font-normal hover:text-slate-200">
+                  {l}{sort === k ? (asc ? "↑" : "↓") : ""}
+                </th>
+              ))}
+              <th className="px-2 py-1.5 text-right font-normal">换手%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.code} className={`border-b border-line/40 hover:bg-panel2 ${r.is_me ? "bg-[#7b7ff2]/10" : ""}`}>
+                <td className="num px-2 py-1.5">
+                  <a href={`#/stock/${r.code}`} className="text-[#7b7ff2] hover:underline">{r.code}</a>
+                </td>
+                <td className="px-2 py-1.5">{r.name}{r.is_me ? " ★" : ""}</td>
+                <td className="num px-2 py-1.5 text-right">{fmtPrice(r.price)}</td>
+                <td className={`num px-2 py-1.5 text-right ${(r.pct_chg ?? 0) > 0 ? "text-up" : (r.pct_chg ?? 0) < 0 ? "text-down" : ""}`}>{r.pct_chg == null ? "—" : fmtPct(r.pct_chg)}</td>
+                {PEER_METRICS.map(([k]) => (
+                  <td key={k} className="num px-2 py-1.5 text-right">{fmtM(k, r[k])}</td>
+                ))}
+                <td className="num px-2 py-1.5 text-right">{r.turnover == null ? "—" : r.turnover.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

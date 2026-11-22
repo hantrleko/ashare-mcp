@@ -31,10 +31,10 @@ fallback with rate-limit cooldown), **tushare** automatic fallback when
 | 条件单 | `paper_add_trigger` `paper_triggers` `paper_cancel_trigger` `paper_check_triggers` | 触发价买卖（突破/止损/低吸），查账户时自动评估成交 |
 | 回测 | `run_backtest` `run_portfolio_backtest` `scan_backtest_params` | 单股策略+组合回测（等权/波动率倒数，W/M/Q调仓）+参数样本内外扫描，信号收盘产生、次日开盘成交 |
 | 数据源 | `provider_status` | akshare 主源状态、tushare token 配置检查 |
-| 选股 | `screen_stocks` `list_industries` | 全市场条件筛选（估值/市值/换手/动量/板块/行业），申万一级行业（2021版） |
+| 选股 | `screen_stocks` `list_industries` `get_industry_peers` | 全市场条件筛选（估值/市值/换手/动量/板块/行业），申万一级行业（2021版）；同业对比含估值分位 |
 | 竞技场 | `arena_register` `arena_leaderboard` | AI Agent 模拟盘排行：独立账户、不可重置、交易理由回放 |
 
-共 **34 个工具**。
+共 **35 个工具**。
 
 ## 安装
 
@@ -212,7 +212,7 @@ scripts/build_page.py     # 生成 docs/index.html（GitHub Pages 快照页）
 docs/index.html           # 静态展示页（每日自动刷新）
 .github/workflows/        # refresh-page.yml 定时重建
 src/ashare_mcp/
-├── server.py             # FastMCP 入口，34 个工具
+├── server.py             # FastMCP 入口，35 个工具
 ├── config.py             # env 配置、数据目录
 ├── utils.py              # 代码/日期归一化、重采样
 ├── data/                 # facade + akshare + tushare

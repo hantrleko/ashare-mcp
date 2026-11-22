@@ -338,3 +338,24 @@ def test_portfolio_and_scan_endpoints(client, monkeypatch):
     assert r.status_code == 200
     r = client.post("/api/backtest/portfolio", json={"symbols": ["600001"]})
     assert r.status_code == 400
+
+
+def test_peers_api(client, monkeypatch):
+    import pandas as pd
+    import ashare_mcp.data.akshare_data as ad
+    import ashare_mcp.research.peers as P
+    monkeypatch.setattr(ad, "_spot_df", lambda: pd.DataFrame([
+        dict(code6="600001", name="A1", price=10, pct_chg=1, pe_ttm=10,
+             pb=1.0, mkt_cap=100e8, turnover=2),
+        dict(code6="600002", name="A2", price=20, pct_chg=-1, pe_ttm=20,
+             pb=2.0, mkt_cap=50e8, turnover=1)]))
+    monkeypatch.setattr(P, "industry_map",
+                        lambda: {"600001": "银行", "600002": "银行"})
+    r = client.get("/api/peers/600001")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["industry"] == "银行" and j["count"] == 2
+    assert j["stock"]["is_me"] and "percentiles" in j["stock"]
+    assert "pe_ttm" in j["medians"]
+    r = client.get("/api/peers/999999")
+    assert r.status_code == 400

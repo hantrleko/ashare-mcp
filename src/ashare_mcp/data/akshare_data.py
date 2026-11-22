@@ -56,6 +56,7 @@ def _patch_mini_racer() -> None:
 _patch_mini_racer()
 
 from ..utils import (
+    latest_records,
     _market_of,
     df_records,
     normalize_date,
@@ -590,8 +591,12 @@ def _kline_daily(symbol: str, start_date: str, end_date: str,
         df = ak.stock_zh_a_hist_sina(
             symbol=sina_symbol(code6, mkt), period="daily",
             start_date=sd, end_date=ed, adjust=adjust)
+        df = df.copy()
+        # sina kline volume is in SHARES; canonical stock unit is 手 (EM)
+        vol_col = "volume" if "volume" in df.columns else "成交量"
+        if vol_col in df.columns:
+            df[vol_col] = pd.to_numeric(df[vol_col], errors="coerce") / 100
         if "turnover" in df.columns:
-            df = df.copy()
             df["turnover"] = pd.to_numeric(df["turnover"], errors="coerce") * 100
         return df, "sina"
     except Exception as e:
@@ -609,6 +614,7 @@ def _kline_daily(symbol: str, start_date: str, end_date: str,
 def get_kline(symbol: str, period: str = "daily",
               start_date: str = "", end_date: str = "",
               adjust: str = "qfq") -> list[dict[str, Any]]:
+    """OHLCV bars; stock ``volume`` is in 手 (100 shares/lot)."""
     if period not in ("daily", "weekly", "monthly"):
         raise ValueError("period must be daily|weekly|monthly")
     if adjust not in ("", "qfq", "hfq"):
@@ -627,6 +633,7 @@ def get_kline(symbol: str, period: str = "daily",
 
 def get_index_kline(symbol: str = "sh000001", period: str = "daily",
                     start_date: str = "", end_date: str = "") -> list[dict[str, Any]]:
+    """OHLCV bars for an index; ``volume`` is in SHARES (sina source)."""
     idx = _norm_index_symbol(symbol)
     sd = normalize_date(start_date, "20200101")
     ed = normalize_date(end_date, date.today().strftime("%Y%m%d"))
@@ -763,7 +770,7 @@ def get_financial_abstract(symbol: str, indicator: str = "按报告期",
     code6, mkt = normalize_symbol(symbol)
     df = ak.stock_financial_analysis_indicator_em(
         symbol=ts_code(code6, mkt), indicator=indicator)
-    return df_records(df, limit=max(1, min(int(limit), 40)))
+    return latest_records(df, max(1, min(int(limit), 40)))
 
 
 def get_financial_statement(symbol: str, statement: str = "income",
@@ -774,7 +781,7 @@ def get_financial_statement(symbol: str, statement: str = "income",
         raise ValueError(f"statement must be one of {sorted(_STATEMENT_MAP)}")
     df = ak.stock_financial_report_sina(
         symbol=sina_symbol(code6, mkt), indicator=cn)
-    return df_records(df, limit=max(1, min(int(limit), 40)))
+    return latest_records(df, max(1, min(int(limit), 40)))
 
 
 # ---------------- events & factors ----------------

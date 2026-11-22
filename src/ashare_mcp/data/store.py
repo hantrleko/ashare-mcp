@@ -64,10 +64,25 @@ def enabled() -> bool:
     return os.environ.get("ASHARE_MCP_STORE", "1").strip() != "0"
 
 
+_DB_VERSION = 2
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """user_version 2: stock kline volumes were cached in mixed units
+    (sina shares vs EM 手) — drop all non-index bars once."""
+    (v,) = conn.execute("PRAGMA user_version").fetchone()
+    if v < 2:
+        conn.execute("DELETE FROM daily_bars WHERE adjust != 'idx'")
+        conn.execute("DELETE FROM sync_meta WHERE adjust != 'idx'")
+        conn.execute(f"PRAGMA user_version={_DB_VERSION}")
+        conn.commit()
+
+
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path(), timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_DDL)
+    _migrate(conn)
     return conn
 
 

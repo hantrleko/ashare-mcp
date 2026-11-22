@@ -713,6 +713,20 @@ def screen_stocks(body: ScreenIn) -> dict[str, Any]:
         raise _err(e)
 
 
+@app.get("/api/peers/{symbol}")
+def peers(symbol: str, limit: int = 30) -> dict[str, Any]:
+    from ..research.peers import industry_peers
+    try:
+        return _cache.get(("peers", symbol, limit), 60.0,
+                          lambda: industry_peers(symbol, limit))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise _err(e)
+
+
 @app.get("/api/industries")
 def industries() -> dict[str, Any]:
     from ..research.industry import list_industries

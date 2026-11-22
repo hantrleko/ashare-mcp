@@ -8,6 +8,7 @@ import pandas as pd
 
 from ..config import tushare_token
 from ..utils import (
+    latest_records,
     df_records,
     normalize_date,
     normalize_symbol,
@@ -127,7 +128,7 @@ def get_financial_abstract(symbol: str, indicator: str = "按报告期",
     pro = _client()
     df = pro.fina_indicator(ts_code=ts_code(code6, mkt),
                             start_date="", end_date="")
-    return df_records(df, limit=max(1, min(int(limit), 40)))
+    return latest_records(df, max(1, min(int(limit), 40)))
 
 
 def get_financial_statement(symbol: str, statement: str = "income",
@@ -143,7 +144,7 @@ def get_financial_statement(symbol: str, statement: str = "income",
     if fn is None:
         raise ValueError(f"statement must be one of {sorted(fn_map)}")
     df = fn(ts_code=ts_code(code6, mkt), start_date="", end_date="")
-    return df_records(df, limit=max(1, min(int(limit), 40)))
+    return latest_records(df, max(1, min(int(limit), 40)))
 
 
 def get_money_flow(symbol: str, days: int = 20) -> list[dict[str, Any]]:

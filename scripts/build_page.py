@@ -146,7 +146,11 @@ footer{{border-top:1px solid var(--line);margin-top:56px;padding:28px 0;color:va
 </div>
 <div style="margin-top:20px">
 <a class="btn btn-p" href="https://github.com/hantrleko/ashare-mcp">GitHub 仓库</a>
-<a class="btn btn-g" href="{DEMO_URL}">在线 Demo（本机隧道）</a>
+<a class="btn btn-g" href="https://github.com/hantrleko/ashare-mcp#web-%E5%89%8D%E7%AB%AF">README · Web 前端</a>
+</div>
+<div style="margin-top:14px;text-align:center">
+<p class="note" style="margin-bottom:6px">本地一键运行（网页看板）</p>
+<pre style="display:inline-block;text-align:left;margin:0;padding:8px 16px;border-radius:8px;background:#161b22;color:#c9d1d9">uvx --from ashare-mcp-server ashare-web</pre>
 </div>
 <p class="note">快照数据生成于 {GEN_DATE}（静态页，非实时）</p>
 </header>
@@ -206,7 +210,6 @@ footer{{border-top:1px solid var(--line);margin-top:56px;padding:28px 0;color:va
 
 
 def main() -> None:
-    demo_url = "https://modems-brick-mind-legs.trycloudflare.com"
     print("fetching index quotes…")
     idx = index_cards()
     print("fetching kline 600519…")
@@ -219,7 +222,6 @@ def main() -> None:
     html = TEMPLATE.format(
         UP=UP, DOWN=DOWN,
         GEN_DATE=date.today().isoformat(),
-        DEMO_URL=demo_url,
         IDX_CARDS=idx,
         FIG_KLINE=fig_k,
         FIG_EQUITY=fig_e_h,

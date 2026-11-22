@@ -91,6 +91,7 @@ def get_kline(symbol: str, period: str = "daily",
     - adjust: "" (raw) | "qfq" (forward-adjusted, default) | "hfq"
     - dates: YYYYMMDD or YYYY-MM-DD; empty = default range
     - limit: max bars returned (default 250, keeps most recent)
+    - volume is in 手 (lots of 100 shares)
     """
     try:
         res, src = market_data.call(
@@ -123,7 +124,8 @@ def get_index_quote(symbol: str = "sh000001") -> dict[str, Any]:
 def get_index_kline(symbol: str = "sh000001", period: str = "daily",
                     start_date: str = "", end_date: str = "",
                     limit: int = 500) -> dict[str, Any]:
-    """Historical bars for a market index (e.g. sh000001, sz399006)."""
+    """Historical bars for a market index (e.g. sh000001, sz399006).
+    Index volume is in SHARES (sina source)."""
     try:
         res, src = market_data.call(
             "get_index_kline", symbol, period=period,
@@ -570,6 +572,23 @@ def list_industries() -> dict[str, Any]:
     try:
         from .research.industry import list_industries as _li
         return {"industries": _li()}
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def get_industry_peers(symbol: str, limit: int = 30) -> dict[str, Any]:
+    """SW L1 industry peers of a stock with valuation percentiles.
+
+    Returns {industry, count, stock, peers, medians}. stock carries
+    percentiles (0-100, lower value -> lower percentile) for pe_ttm,
+    pb, roe_est, mkt_cap vs the industry, computed over valid positive
+    values only (null when the stock's value is invalid). peers = top
+    `limit` by mkt_cap, stock flagged via is_me. roe_est = PB/PE est.
+    """
+    try:
+        from .research.peers import industry_peers
+        return industry_peers(symbol, limit)
     except Exception as e:
         return _err(e)
 

@@ -21,11 +21,11 @@ def test_tools_registered():
         "paper_list_accounts", "paper_create_account",
         "run_backtest", "run_portfolio_backtest", "scan_backtest_params",
         "provider_status",
-        "screen_stocks", "list_industries",
+        "screen_stocks", "list_industries", "get_industry_peers",
         "arena_register", "arena_leaderboard",
     }
     assert expected <= names, f"missing: {expected - names}"
-    assert len(names) == len(expected)  # 34 tools
+    assert len(names) == len(expected)  # 35 tools
 
 
 def test_reason_params_present():

@@ -214,6 +214,21 @@ export interface ScreenResult {
 }
 export interface IndustryInfo { name: string; count: number }
 
+export interface PeerRow {
+  code: string; name: string; is_me: boolean;
+  price?: number | null; pct_chg?: number | null;
+  pe_ttm?: number | null; pb?: number | null;
+  roe_est?: number | null; mkt_cap?: number | null;
+  turnover?: number | null;
+}
+export interface PeersResult {
+  industry: string; count: number;
+  stock: PeerRow & { industry?: string;
+    percentiles: Record<string, number | null> };
+  peers: PeerRow[];
+  medians: Record<string, number | null>;
+}
+
 export interface AuthMe {
   public: boolean; role: "admin" | "agent" | "anonymous";
   account: string | null;
@@ -321,6 +336,8 @@ export const api = {
   backtestScan: (b: ScanIn) => req<ScanResult>("/backtest/scan", post(b)),
 
   screen: (b: ScreenIn) => req<ScreenResult>("/screen", post(b)),
+  peers: (sym: string, limit = 30) =>
+    req<PeersResult>(`/peers/${enc(sym)}?limit=${limit}`),
   industries: () => req<{ data: IndustryInfo[] }>("/industries"),
 
   authMe: () => req<AuthMe>("/auth/me"),
