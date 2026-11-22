@@ -154,13 +154,14 @@ def leaderboard(benchmark: str = "sh000300",
         _anchor(bench, str(acct.state.get("created_at") or "")[:10])
         for acct in states.values()]
     anchor_dates = [a[0] for a in anchors if a]
-    if anchor_dates:
-        start = min(anchor_dates)
-        bench = [(d, v) for d, v in bench if d >= start]
+    start = min(anchor_dates) if anchor_dates else None
+    bench = [(d, v) for d, v in bench if start and d >= start]
 
     rows = []
+    series = {}
     for a in agents:
         m = _agent_metrics(states[a["id"]], live, bench)
+        series[a["id"]] = m["series"]
         rows.append({
             "id": a["id"], "name": a["name"], "model": a.get("model", ""),
             "created_at": a.get("created_at"),
@@ -172,8 +173,7 @@ def leaderboard(benchmark: str = "sh000300",
         r["rank"] = i
     return {"as_of": datetime.now().isoformat(timespec="seconds"),
             "benchmark": benchmark, "agents": rows,
-            "series": {a["id"]: _agent_metrics(
-                states[a["id"]], live, bench)["series"] for a in agents},
+            "series": series,
             "bench_series": [{"date": d, "close": v} for d, v in bench]}
 
 
