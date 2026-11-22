@@ -123,6 +123,31 @@ export interface BacktestIn {
   slippage_bps: number; min_trade_value: number;
 }
 
+export interface ScreenIn {
+  ranges?: Record<string, [number | null, number | null]>;
+  industries?: string[];
+  boards?: string[];
+  exclude_st?: boolean;
+  exclude_suspended?: boolean;
+  momentum?: Record<string, [number | null, number | null]>;
+  sort_by?: string;
+  desc?: boolean;
+  limit?: number;
+}
+export interface ScreenRow {
+  code: string; name: string; industry: string; board: string;
+  price?: number | null; pct_chg?: number | null; turnover?: number | null;
+  pe_ttm?: number | null; pb?: number | null; roe_est?: number | null;
+  mkt_cap?: number | null; float_mkt_cap?: number | null;
+  amount?: number | null; volume_ratio?: number | null;
+  mom_20?: number | null; mom_60?: number | null;
+}
+export interface ScreenResult {
+  total_universe: number; matched: number; rows: ScreenRow[];
+  as_of: string; notes: string[];
+}
+export interface IndustryInfo { name: string; count: number }
+
 const enc = encodeURIComponent;
 
 export const api = {
@@ -196,6 +221,9 @@ export const api = {
       post({ capital })),
 
   backtest: (b: BacktestIn) => req<BacktestResult>("/backtest", post(b)),
+
+  screen: (b: ScreenIn) => req<ScreenResult>("/screen", post(b)),
+  industries: () => req<{ data: IndustryInfo[] }>("/industries"),
 };
 
 function post(body: unknown): RequestInit {

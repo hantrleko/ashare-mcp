@@ -13,10 +13,12 @@ const Stock = lazy(() => import("./pages/Stock"));
 const Paper = lazy(() => import("./pages/Paper"));
 const Backtest = lazy(() => import("./pages/Backtest"));
 const Market = lazy(() => import("./pages/Market"));
+const Screener = lazy(() => import("./pages/Screener"));
 
 const LINKS = [
   { to: "/", label: "首页" },
   { to: "/market", label: "市场" },
+  { to: "/screener", label: "选股" },
   { to: "/paper", label: "模拟盘" },
   { to: "/backtest", label: "回测" },
 ];
@@ -89,6 +91,7 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/stock/:code" element={<Stock />} />
               <Route path="/market" element={<Market />} />
+              <Route path="/screener" element={<Screener />} />
               <Route path="/paper" element={<Paper />} />
               <Route path="/backtest" element={<Backtest />} />
             </Routes>

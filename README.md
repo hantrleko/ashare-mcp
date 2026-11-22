@@ -31,8 +31,9 @@ fallback with rate-limit cooldown), **tushare** automatic fallback when
 | 条件单 | `paper_add_trigger` `paper_triggers` `paper_cancel_trigger` `paper_check_triggers` | 触发价买卖（突破/止损/低吸），查账户时自动评估成交 |
 | 策略回测 | `run_backtest` | `ma_cross`/`momentum`/`grid`/`buy_hold`，信号收盘产生、次日开盘成交，无未来函数 |
 | 数据源 | `provider_status` | akshare 主源状态、tushare token 配置检查 |
+| 选股 | `screen_stocks` `list_industries` | 全市场条件筛选（估值/市值/换手/动量/板块/行业），新浪行业分类 |
 
-共 **28 个工具**。
+共 **30 个工具**。
 
 ## 安装
 
@@ -132,6 +133,7 @@ cd web; npm run dev   # http://127.0.0.1:5173
 - **Web 调度器**（uvicorn 内守护线程）：交易时段（9:30–11:30 / 13:00–15:00 CST）每分钟为有待触发条件单的账户跑 `check_triggers`；每日 15:35 后为所有账户落当日净值、并预热持仓/条件单个股与九大指数的 K线缓存。`ASHARE_WEB_SCHEDULER=0` 关闭；`GET /api/scheduler` 查状态。
 - **`ashare-sync` CLI**：立即跑一次每日结算+缓存预热；`--force` 跳过节假日判断。
 - **交易日历** `data/trade_calendar.json`：新浪交易日历（`calendar_trade_date_hist_sina`）本地缓存，7 天或越界自动刷新，取数失败回退旧文件；`GET /api/market-clock` 返回当前是否交易日，前端状态药丸节假日全天显示"休市"。
+- **行业分类** `data/industry.json`：新浪行业（49 个板块）代码→行业映射，7 天自动刷新（6 小时节流），取数失败回退旧文件与打包快照 `data/industry.csv`；`GET /api/industries`、`POST /api/screen`（网页"选股"页）使用。
 - 已知限制：交易日历取数完全失败且无本地缓存时，盘中条件单检查退回到"周一~周五"规则——节假日盘中会用最近收盘价评估条件单（不会成交到不存在的行情）。
 
 ## Streamlit 看板（轻量旧版）
@@ -177,7 +179,7 @@ scripts/build_page.py     # 生成 docs/index.html（GitHub Pages 快照页）
 docs/index.html           # 静态展示页（每日自动刷新）
 .github/workflows/        # refresh-page.yml 定时重建
 src/ashare_mcp/
-├── server.py             # FastMCP 入口，28 个工具
+├── server.py             # FastMCP 入口，30 个工具
 ├── config.py             # env 配置、数据目录
 ├── utils.py              # 代码/日期归一化、重采样
 ├── data/                 # facade + akshare + tushare

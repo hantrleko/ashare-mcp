@@ -263,3 +263,37 @@ def test_resolve_dist_prefers_package_static(tmp_path, monkeypatch):
 def test_resolve_dist_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("ASHARE_WEB_DIST", str(tmp_path))
     assert api._resolve_dist() == tmp_path
+
+
+def test_screen_endpoint(client, monkeypatch):
+    import pandas as pd
+    import ashare_mcp.data.akshare_data as ad
+    import ashare_mcp.research.screener as scr
+    monkeypatch.setattr(ad, "_spot_df", lambda: pd.DataFrame([
+        {"code6": "600519", "name": "贵州茅台", "price": 1700.0,
+         "pct_chg": 1.2, "turnover": 0.4, "pe_ttm": 30.0, "pb": 10.0,
+         "mkt_cap": 2.1e12, "float_mkt_cap": 2.1e12, "amount": 5e9,
+         "volume_ratio": 1.1, "amplitude": 2.0},
+        {"code6": "000001", "name": "平安银行", "price": 12.0,
+         "pct_chg": -0.5, "turnover": 1.0, "pe_ttm": 5.0, "pb": 0.6,
+         "mkt_cap": 2.3e11, "float_mkt_cap": 2.0e11, "amount": 1e9,
+         "volume_ratio": 0.9, "amplitude": 1.0},
+    ]))
+    monkeypatch.setattr(scr, "industry_map", lambda: {})
+    r = client.post("/api/screen", json={"ranges": {"pe_ttm": [0, 10]}})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["total_universe"] == 2 and j["matched"] == 1
+    assert j["rows"][0]["code"] == "000001"
+
+    r = client.post("/api/screen", json={"ranges": {"nope": [0, 1]}})
+    assert r.status_code == 400
+
+
+def test_industries_endpoint(client, monkeypatch):
+    import ashare_mcp.research.industry as ind
+    monkeypatch.setattr(ind, "list_industries",
+                        lambda: [{"name": "白酒行业", "count": 20}])
+    r = client.get("/api/industries")
+    assert r.status_code == 200
+    assert r.json()["data"][0]["name"] == "白酒行业"

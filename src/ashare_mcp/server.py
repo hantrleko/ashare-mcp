@@ -443,6 +443,46 @@ def provider_status() -> dict[str, Any]:
         return _err(e)
 
 
+@mcp.tool()
+def screen_stocks(ranges: dict[str, list] | None = None,
+                  industries: list[str] | None = None,
+                  boards: list[str] | None = None,
+                  exclude_st: bool = True,
+                  exclude_suspended: bool = True,
+                  momentum: dict[str, list] | None = None,
+                  sort_by: str = "mkt_cap",
+                  desc: bool = True,
+                  limit: int = 100) -> dict[str, Any]:
+    """Screen A-shares on the realtime snapshot.
+
+    ranges: {field: [min, max]} (either may be null) over price, pct_chg,
+    turnover, pe_ttm, pb, roe_est, mkt_cap, float_mkt_cap, amount,
+    volume_ratio, amplitude. boards: main|chinext|star|bse.
+    momentum: {mom_20|mom_60: [min, max]} — computed on stage-1
+    candidates only, capped at 200.
+    Returns {total_universe, matched, rows, as_of, notes}.
+    """
+    try:
+        from .research.screener import screen
+        return screen(ranges=ranges, industries=industries, boards=boards,
+                      exclude_st=exclude_st,
+                      exclude_suspended=exclude_suspended,
+                      momentum=momentum, sort_by=sort_by, desc=desc,
+                      limit=limit)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def list_industries() -> dict[str, Any]:
+    """Sina industry classification: [{name, count}] by member count."""
+    try:
+        from .research.industry import list_industries as _li
+        return {"industries": _li()}
+    except Exception as e:
+        return _err(e)
+
+
 def main() -> None:
     mcp.run()
 

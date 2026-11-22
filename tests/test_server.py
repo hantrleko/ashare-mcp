@@ -20,6 +20,7 @@ def test_tools_registered():
         "paper_check_triggers",
         "paper_list_accounts", "paper_create_account",
         "run_backtest", "provider_status",
+        "screen_stocks", "list_industries",
     }
     assert expected <= names, f"missing: {expected - names}"
-    assert len(names) == len(expected)
+    assert len(names) == len(expected)  # 30 tools

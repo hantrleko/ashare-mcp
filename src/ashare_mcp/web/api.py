@@ -167,6 +167,18 @@ class BacktestIn(BaseModel):
     min_trade_value: float = 5000.0
 
 
+class ScreenIn(BaseModel):
+    ranges: dict[str, list[float | None]] = Field(default_factory=dict)
+    industries: list[str] = Field(default_factory=list)
+    boards: list[str] = Field(default_factory=list)
+    exclude_st: bool = True
+    exclude_suspended: bool = True
+    momentum: dict[str, list[float | None]] = Field(default_factory=dict)
+    sort_by: str = "mkt_cap"
+    desc: bool = True
+    limit: int = 100
+
+
 # ---------- app ----------
 
 from contextlib import asynccontextmanager
@@ -445,6 +457,27 @@ def backtest(body: BacktestIn) -> dict[str, Any]:
     except Exception as e:
         raise _err(e)
     return {**res, "benchmark": bench.get("equity_curve", [])}
+
+
+@app.post("/api/screen")
+def screen_stocks(body: ScreenIn) -> dict[str, Any]:
+    from ..research.screener import screen
+    import json
+    args = body.model_dump()
+    key = ("screen", json.dumps(args, sort_keys=True, default=str))
+    try:
+        return _cache.get(key, TTL_INTRADAY,
+                          lambda: screen(**args))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _err(e)
+
+
+@app.get("/api/industries")
+def industries() -> dict[str, Any]:
+    from ..research.industry import list_industries
+    return {"data": list_industries()}
 
 
 @app.get("/api/strategies")
