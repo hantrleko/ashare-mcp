@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, type PaperStatus, type Quote } from "../api";
 import { Card, ErrorBanner, PctText, Skeleton } from "../components/ui";
 import { SearchBox } from "../components/SearchBox";
+import { useAccount } from "../account";
 import { fmtAmount, fmtNum, fmtPrice, fmtSigned } from "../format";
 
 const DEFAULT_WATCH = ["600519", "000001", "300750", "601318", "000858"];
@@ -44,9 +45,10 @@ export default function Home() {
     } catch { /* keep stale */ }
   }, []);
 
+  const { account } = useAccount();
   const loadStatus = useCallback(async () => {
-    try { setStatus(await api.paperStatus()); } catch { /* offline ok */ }
-  }, []);
+    try { setStatus(await api.paperStatus(account)); } catch { /* offline ok */ }
+  }, [account]);
 
   useEffect(() => {
     loadIndices();

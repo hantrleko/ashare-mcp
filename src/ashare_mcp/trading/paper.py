@@ -1,4 +1,4 @@
-"""Paper-trading engine for A-shares with JSON persistence.
+"""Paper-trading engine for A-shares with SQLite multi-account persistence.
 
 Rules modeled after mainland China A-share trading:
 - lot size 100 shares (1 手)
@@ -9,17 +9,15 @@ Rules modeled after mainland China A-share trading:
 """
 from __future__ import annotations
 
-import json
-import os
-import time
+import functools
 import uuid
+from contextlib import contextmanager
 from datetime import date, datetime
-from pathlib import Path
 from typing import Any
 
-from ..config import data_dir
 from ..data.facade import market_data
 from ..utils import limit_pct_for, normalize_symbol
+from .accounts import AccountStore
 
 COMMISSION_RATE = 0.00025
 COMMISSION_MIN = 5.0
@@ -27,8 +25,6 @@ STAMP_TAX_SELL = 0.0005   # 0.05% since 2023-08-28
 TRANSFER_FEE = 0.00001    # 0.001%
 LOT = 100
 MAX_ORDERS = 500
-
-_STATE_PATH = data_dir() / "paper_account.json"
 
 
 def _buy_fee(amount: float) -> float:
@@ -40,12 +36,43 @@ def _sell_fee(amount: float) -> float:
             + amount * (STAMP_TAX_SELL + TRANSFER_FEE))
 
 
+def _reloaded(fn):
+    """Reload state from the DB on the outermost public-method call only.
+
+    ``_eval_triggers`` calls ``buy``/``sell`` internally — reloading there
+    would clobber the in-memory 'filling' marker, so nested calls skip it.
+    """
+    @functools.wraps(fn)
+    def wrapper(self: "PaperAccount", *args: Any, **kwargs: Any) -> Any:
+        with self._session():
+            return fn(self, *args, **kwargs)
+    return wrapper
+
+
 class PaperAccount:
-    def __init__(self) -> None:
-        self.path = _STATE_PATH
-        self.state = self._load() or self._fresh(1_000_000.0)
+    def __init__(self, account_id: str = "default",
+                 store: AccountStore | None = None) -> None:
+        self.account_id = account_id
+        self.store = store or AccountStore()
+        self._depth = 0
+        if account_id == "default":
+            self.store.create_default()
+        self.state, self.rev = self.store.load(account_id)
 
     # ---------- persistence ----------
+
+    @contextmanager
+    def _session(self):
+        self._depth += 1
+        try:
+            if self._depth == 1:
+                self.state, self.rev = self.store.load(self.account_id)
+            yield
+        finally:
+            self._depth -= 1
+
+    def _save(self) -> None:
+        self.rev = self.store.save(self.account_id, self.state, self.rev)
 
     def _fresh(self, capital: float) -> dict[str, Any]:
         return {
@@ -59,26 +86,6 @@ class PaperAccount:
             "triggers": [],
             "history": [],
         }
-
-    def _load(self) -> dict[str, Any] | None:
-        try:
-            if self.path.exists():
-                return json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-        return None
-
-    def _save(self) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.state, ensure_ascii=False, indent=1),
-                       encoding="utf-8")
-        for _ in range(5):  # Windows: Defender can briefly hold the file
-            try:
-                os.replace(tmp, self.path)
-                return
-            except PermissionError:
-                time.sleep(0.05)
-        os.replace(tmp, self.path)
 
     # ---------- helpers ----------
 
@@ -168,6 +175,7 @@ class PaperAccount:
         if self.state.get("triggers"):
             self._save()
 
+    @_reloaded
     def add_trigger(self, symbol: str, side: str, shares: int,
                     trigger_price: float, condition: str = ">=",
                     note: str = "") -> dict[str, Any]:
@@ -197,6 +205,7 @@ class PaperAccount:
         self._save()
         return trig
 
+    @_reloaded
     def cancel_trigger(self, trigger_id: str) -> dict[str, Any]:
         for t in self.state.get("triggers", []):
             if t["id"] == trigger_id:
@@ -208,9 +217,11 @@ class PaperAccount:
                 return t
         raise KeyError(f"no pending trigger {trigger_id}")
 
+    @_reloaded
     def triggers(self) -> list[dict[str, Any]]:
         return list(reversed(self.state.get("triggers", [])))
 
+    @_reloaded
     def check_triggers(self) -> dict[str, Any]:
         self._rollover()
         self._eval_triggers()
@@ -220,11 +231,15 @@ class PaperAccount:
 
     # ---------- account ----------
 
+    @_reloaded
     def reset(self, capital: float = 1_000_000.0) -> dict[str, Any]:
+        if float(capital) <= 0:
+            raise ValueError("capital must be positive")
         self.state = self._fresh(capital)
         self._save()
         return {"status": "reset", "initial_capital": capital}
 
+    @_reloaded
     def buy(self, symbol: str, shares: int,
             price: float | None = None) -> dict[str, Any]:
         self._rollover()
@@ -267,6 +282,7 @@ class PaperAccount:
                 "shares": shares, "price": px, "amount": amount, "fee": fee,
                 "cash": self.state["cash"]}
 
+    @_reloaded
     def sell(self, symbol: str, shares: int,
              price: float | None = None) -> dict[str, Any]:
         self._rollover()
@@ -329,6 +345,7 @@ class PaperAccount:
             })
         return rows, total
 
+    @_reloaded
     def status(self) -> dict[str, Any]:
         self._rollover()
         self._eval_triggers()
@@ -359,15 +376,18 @@ class PaperAccount:
             del hist[:-1000]
         self._save()
 
+    @_reloaded
     def history(self) -> list[dict[str, Any]]:
         return list(self.state.get("history", []))
 
+    @_reloaded
     def positions(self) -> list[dict[str, Any]]:
         self._rollover()
         self._eval_triggers()
         rows, _ = self._mark_positions()
         return rows
 
+    @_reloaded
     def orders(self, limit: int = 50) -> list[dict[str, Any]]:
         orders = self.state["orders"][-max(1, min(int(limit), MAX_ORDERS)):]
         return list(reversed(orders))

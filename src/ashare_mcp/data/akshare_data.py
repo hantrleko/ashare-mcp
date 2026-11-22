@@ -24,6 +24,7 @@ from ..utils import (
     sina_symbol,
     ts_code,
 )
+from . import store
 
 _SPOT_TTL = 60.0
 _INDEX_TTL = 60.0
@@ -508,8 +509,16 @@ def get_kline(symbol: str, period: str = "daily",
         raise ValueError("period must be daily|weekly|monthly")
     if adjust not in ("", "qfq", "hfq"):
         raise ValueError("adjust must be ''|'qfq'|'hfq'")
-    df, _src = _kline_daily(symbol, start_date, end_date, adjust)
-    return df_records(_norm_kline(df, period))
+    code6, _ = normalize_symbol(symbol)
+    sd = normalize_date(start_date, "20200101")
+    ed = normalize_date(end_date, date.today().strftime("%Y%m%d"))
+    df = store.get_daily(
+        code6, adjust, _iso(sd), _iso(ed),
+        fetch=lambda s, e: _norm_kline(
+            _kline_daily(symbol, s, e, adjust)[0], "daily"))
+    df = _norm_kline(df, period)
+    df["code"] = code6
+    return df_records(df[_KLINE_COLS])
 
 
 def get_index_kline(symbol: str = "sh000001", period: str = "daily",
@@ -517,11 +526,16 @@ def get_index_kline(symbol: str = "sh000001", period: str = "daily",
     idx = _norm_index_symbol(symbol)
     sd = normalize_date(start_date, "20200101")
     ed = normalize_date(end_date, date.today().strftime("%Y%m%d"))
-    df = ak.index_zh_daily_sina(symbol=idx)
-    if "date" in df.columns:
-        df = df[(df["date"] >= sd) & (df["date"] <= ed)]
-    out = _norm_kline(df, period)
-    return df_records(out)
+    df = store.get_daily(
+        idx, "idx", _iso(sd), _iso(ed),
+        fetch=lambda s, e: _norm_kline(ak.index_zh_daily_sina(symbol=idx), "daily"))
+    df = _norm_kline(df, period)
+    df["code"] = idx
+    return df_records(df[_KLINE_COLS])
+
+
+def _iso(yyyymmdd: str) -> str:
+    return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:]}"
 
 
 def get_limit_pool(date_str: str = "", pool: str = "zt",

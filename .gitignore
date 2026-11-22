@@ -18,3 +18,8 @@ dist/
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo
+data/
+*.db
+*.db-shm
+*.db-wal
+*.migrated

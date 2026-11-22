@@ -7,18 +7,27 @@ from mcp.server.fastmcp import FastMCP
 
 from .backtest.engine import STRATEGIES, run_backtest
 from .data.facade import market_data
+from .trading.accounts import AccountStore
 from .trading.paper import PaperAccount
 
 mcp = FastMCP("ashare-mcp")
 
-_account: PaperAccount | None = None
+_store_instance: AccountStore | None = None
 
 
-def _acct() -> PaperAccount:
-    global _account
-    if _account is None:
-        _account = PaperAccount()
-    return _account
+def _store() -> AccountStore:
+    global _store_instance
+    if _store_instance is None:
+        _store_instance = AccountStore()
+    return _store_instance
+
+_accounts: dict[str, PaperAccount] = {}
+
+
+def _acct(account: str = "default") -> PaperAccount:
+    if account not in _accounts:
+        _accounts[account] = PaperAccount(account)
+    return _accounts[account]
 
 
 def _err(e: Exception) -> dict[str, Any]:
@@ -254,57 +263,69 @@ def get_financial_statement(symbol: str, statement: str = "income",
 # ---------------- paper trading ----------------
 
 @mcp.tool()
-def paper_status() -> dict[str, Any]:
-    """Paper account summary: cash, market value, equity, PnL, position count."""
+def paper_status(account: str = "default") -> dict[str, Any]:
+    """Paper account summary: cash, market value, equity, PnL, position count.
+    account: paper account id; default 'default'.
+"""
     try:
-        return _acct().status()
+        return _acct(account).status()
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_buy(symbol: str, shares: int, price: float | None = None) -> dict[str, Any]:
+def paper_buy(symbol: str, shares: int, price: float | None = None, account: str = "default") -> dict[str, Any]:
     """Buy shares in the paper account. Lots of 100; T+1; price limits
-    enforced. price=None -> fill at latest quote. Fees included."""
+    enforced. price=None -> fill at latest quote. Fees included.
+    account: paper account id; default 'default'.
+"""
     try:
-        return _acct().buy(symbol, shares, price)
+        return _acct(account).buy(symbol, shares, price)
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_sell(symbol: str, shares: int, price: float | None = None) -> dict[str, Any]:
+def paper_sell(symbol: str, shares: int, price: float | None = None, account: str = "default") -> dict[str, Any]:
     """Sell shares in the paper account. Only T+1-available shares can be
-    sold. Lots of 100 unless closing the whole position."""
+    sold. Lots of 100 unless closing the whole position.
+    account: paper account id; default 'default'.
+"""
     try:
-        return _acct().sell(symbol, shares, price)
+        return _acct(account).sell(symbol, shares, price)
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_positions() -> dict[str, Any]:
-    """All paper positions with last price, market value and unrealized PnL."""
+def paper_positions(account: str = "default") -> dict[str, Any]:
+    """All paper positions with last price, market value and unrealized PnL.
+    account: paper account id; default 'default'.
+"""
     try:
-        return {"positions": _acct().positions()}
+        return {"positions": _acct(account).positions()}
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_orders(limit: int = 50) -> dict[str, Any]:
-    """Recent paper-trading orders (newest first), with fees and realized PnL."""
+def paper_orders(limit: int = 50, account: str = "default") -> dict[str, Any]:
+    """Recent paper-trading orders (newest first), with fees and realized PnL.
+    account: paper account id; default 'default'.
+"""
     try:
-        return {"orders": _acct().orders(limit)}
+        return {"orders": _acct(account).orders(limit)}
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_reset(capital: float = 1_000_000.0) -> dict[str, Any]:
-    """Reset the paper account to a fresh state with given starting capital (CNY)."""
+def paper_reset(capital: float = 1_000_000.0, account: str = "default") -> dict[str, Any]:
+    """Reset the paper account to a fresh state with given starting capital (CNY).
+    account: paper account id; default 'default'.
+"""
     try:
-        return _acct().reset(capital)
+        return _acct(account).reset(capital)
     except Exception as e:
         return _err(e)
 
@@ -312,7 +333,7 @@ def paper_reset(capital: float = 1_000_000.0) -> dict[str, Any]:
 @mcp.tool()
 def paper_add_trigger(symbol: str, side: str, shares: int,
                       trigger_price: float, condition: str = ">=",
-                      note: str = "") -> dict[str, Any]:
+                      note: str = "", account: str = "default") -> dict[str, Any]:
     """Add a conditional (trigger) order to the paper account.
 
     - side: "buy" | "sell"; shares in lots of 100
@@ -321,39 +342,67 @@ def paper_add_trigger(symbol: str, side: str, shares: int,
     Triggers are evaluated whenever the account is queried
     (status/positions/check_triggers). Fills go through the normal
     buy/sell path — T+1, price limits and fees still apply.
-    """
+    account: paper account id; default 'default'.
+"""
     try:
-        return _acct().add_trigger(symbol, side, shares,
+        return _acct(account).add_trigger(symbol, side, shares,
                                    trigger_price, condition, note)
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_triggers() -> dict[str, Any]:
+def paper_triggers(account: str = "default") -> dict[str, Any]:
     """List all conditional orders (newest first) with status:
-    pending | filled | failed | cancelled."""
+    pending | filled | failed | cancelled.
+    account: paper account id; default 'default'.
+"""
     try:
-        return {"triggers": _acct().triggers()}
+        return {"triggers": _acct(account).triggers()}
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_cancel_trigger(trigger_id: str) -> dict[str, Any]:
-    """Cancel a pending conditional order by its id."""
+def paper_cancel_trigger(trigger_id: str, account: str = "default") -> dict[str, Any]:
+    """Cancel a pending conditional order by its id.
+    account: paper account id; default 'default'.
+"""
     try:
-        return _acct().cancel_trigger(trigger_id)
+        return _acct(account).cancel_trigger(trigger_id)
     except Exception as e:
         return _err(e)
 
 
 @mcp.tool()
-def paper_check_triggers() -> dict[str, Any]:
+def paper_check_triggers(account: str = "default") -> dict[str, Any]:
     """Evaluate all pending conditional orders against latest quotes now.
-    Returns the full trigger list and remaining pending count."""
+    Returns the full trigger list and remaining pending count.
+    account: paper account id; default 'default'.
+"""
     try:
-        return _acct().check_triggers()
+        return _acct(account).check_triggers()
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def paper_list_accounts() -> dict[str, Any]:
+    """List all paper-trading accounts (id, name, cash, last equity)."""
+    try:
+        from .trading.accounts import AccountStore
+        return {"accounts": _store().list()}
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def paper_create_account(name: str, capital: float = 1_000_000.0,
+                         account_id: str = "") -> dict[str, Any]:
+    """Create a new paper-trading account. account_id optional
+    (a-z0-9_- max 32); empty -> random 8-char id."""
+    try:
+        return _store().create(name, capital, account_id or None)
     except Exception as e:
         return _err(e)
 

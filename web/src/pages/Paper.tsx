@@ -1,52 +1,79 @@
 import { useCallback, useEffect, useState } from "react";
 import { LineSeries } from "lightweight-charts";
-import { api, type Order, type PaperStatus, type Position, type Trigger, type EquityPoint } from "../api";
+import { api, ApiError, type Order, type PaperStatus, type Position, type Trigger, type EquityPoint, type SchedulerStatus } from "../api";
 import { Card, ErrorBanner, PctText, Spinner, useChart } from "../components/ui";
 import { fmtNum, fmtPrice, fmtSigned } from "../format";
 import { useToast } from "../components/Toast";
 import { SearchBox } from "../components/SearchBox";
+import { useAccount } from "../account";
 
 export default function Paper() {
   const toast = useToast();
+  const { account, accounts, setAccount, refresh } = useAccount();
   const [st, setSt] = useState<PaperStatus | null>(null);
   const [pos, setPos] = useState<Position[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [trigs, setTrigs] = useState<Trigger[]>([]);
   const [hist, setHist] = useState<EquityPoint[]>([]);
+  const [sched, setSched] = useState<SchedulerStatus | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
       const [s, p, o, t, h] = await Promise.all([
-        api.paperStatus(), api.paperPositions(), api.paperOrders(50),
-        api.paperTriggers(), api.paperHistory(),
+        api.paperStatus(account), api.paperPositions(account),
+        api.paperOrders(account, 50),
+        api.paperTriggers(account), api.paperHistory(account),
       ]);
       setSt(s); setPos(p.data); setOrders(o.data); setTrigs(t.data); setHist(h.data);
       setErr(null);
     } catch (e) { setErr(e); }
     finally { setLoading(false); }
+  }, [account]);
+  useEffect(() => { setLoading(true); load(); }, [load]);
+  useEffect(() => {
+    api.scheduler().then(setSched).catch(() => {});
   }, []);
-  useEffect(() => { load(); }, [load]);
 
   const doSell = async (code: string) => {
     const p = pos.find((x) => x.code === code);
     if (!p) return;
     try {
-      const r = await api.paperSell(code, p.available);
+      const r = await api.paperSell(account, code, p.available);
       toast("ok", `卖出成交 ${r.code} ${r.shares}股 @ ${r.price} · 盈亏${r.realized_pnl}`);
       load();
     } catch (e) { toast("err", `卖出失败：${e instanceof Error ? e.message : e}`); }
   };
+
+  const cur = accounts.find((a) => a.id === account);
 
   if (loading) return <Spinner label="加载账户…" />;
 
   return (
     <div className="space-y-4">
       <ErrorBanner error={err} onRetry={load} />
-      <p className="text-xs text-slate-500">
-        A股规则：1手=100股 · T+1 · 涨跌停校验 · 佣金万2.5(最低5元)+印花税万5(卖出)+过户费万0.1
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-slate-500">
+          A股规则：1手=100股 · T+1 · 涨跌停校验 · 佣金万2.5(最低5元)+印花税万5(卖出)+过户费万0.1
+        </p>
+        <AccountHeader
+          name={cur?.name ?? account}
+          isDefault={account === "default"}
+          onRenamed={async (name) => {
+            await api.accountRename(account, name);
+            await refresh();
+            toast("ok", "已重命名");
+          }}
+          onDeleted={async () => {
+            await api.accountDelete(account);
+            await refresh();
+            setAccount("default");
+            toast("ok", "账户已删除");
+          }}
+          onError={(m) => toast("err", m)}
+        />
+      </div>
 
       {st && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -104,7 +131,7 @@ export default function Paper() {
         ) : <p className="py-4 text-center text-sm text-slate-500">暂无持仓（在个股页快捷交易下单）</p>}
       </Card>
 
-      <TriggerPanel trigs={trigs} onChange={load} toast={toast} />
+      <TriggerPanel account={account} trigs={trigs} sched={sched} onChange={load} toast={toast} />
 
       <Card title="订单">
         {orders.length ? (
@@ -140,7 +167,64 @@ export default function Paper() {
         ) : <p className="py-4 text-center text-sm text-slate-500">暂无订单</p>}
       </Card>
 
-      <ResetCard onDone={() => { toast("ok", "账户已重置"); load(); }} />
+      <ResetCard account={account} onDone={() => { toast("ok", "账户已重置"); load(); }} />
+    </div>
+  );
+}
+
+function AccountHeader({ name, isDefault, onRenamed, onDeleted, onError }: {
+  name: string; isDefault: boolean;
+  onRenamed: (name: string) => Promise<void>;
+  onDeleted: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [val, setVal] = useState(name);
+  useEffect(() => setVal(name), [name]);
+
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-slate-500">当前账户</span>
+      {renaming ? (
+        <>
+          <input autoFocus value={val} onChange={(e) => setVal(e.target.value)}
+                 className="w-32 rounded border border-line bg-panel2 px-2 py-1 text-sm outline-none" />
+          <button
+            onClick={async () => {
+              try { await onRenamed(val.trim()); setRenaming(false); }
+              catch (e) { onError(e instanceof ApiError ? e.message : String(e)); }
+            }}
+            className="rounded border border-line px-2 py-1 text-xs hover:bg-panel2">保存</button>
+          <button onClick={() => setRenaming(false)}
+                  className="rounded border border-line px-2 py-1 text-xs text-slate-400">取消</button>
+        </>
+      ) : (
+        <>
+          <span className="font-medium text-slate-100">{name}</span>
+          <button onClick={() => setRenaming(true)}
+                  className="rounded border border-line px-2 py-1 text-xs text-slate-400 hover:bg-panel2">重命名</button>
+          {!isDefault && (
+            confirmDel ? (
+              <>
+                <span className="text-xs text-up">确认删除？数据不可恢复</span>
+                <button
+                  onClick={async () => {
+                    try { await onDeleted(); }
+                    catch (e) { onError(e instanceof ApiError ? e.message : String(e)); }
+                    setConfirmDel(false);
+                  }}
+                  className="rounded bg-red-800 px-2 py-1 text-xs text-white hover:bg-red-700">确认删除</button>
+                <button onClick={() => setConfirmDel(false)}
+                        className="rounded border border-line px-2 py-1 text-xs">取消</button>
+              </>
+            ) : (
+              <button onClick={() => setConfirmDel(true)}
+                      className="rounded border border-red-800 px-2 py-1 text-xs text-red-400 hover:bg-red-950/40">删除</button>
+            )
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -166,8 +250,9 @@ function EquityChart({ pts }: { pts: EquityPoint[] }) {
   return <div ref={ref} className="w-full" />;
 }
 
-function TriggerPanel({ trigs, onChange, toast }: {
-  trigs: Trigger[]; onChange: () => void;
+function TriggerPanel({ account, trigs, sched, onChange, toast }: {
+  account: string; trigs: Trigger[]; sched: SchedulerStatus | null;
+  onChange: () => void;
   toast: (k: "ok" | "err", t: string) => void;
 }) {
   const [sym, setSym] = useState("");
@@ -180,7 +265,7 @@ function TriggerPanel({ trigs, onChange, toast }: {
   const add = async () => {
     setBusy(true);
     try {
-      const t = await api.paperAddTrigger({
+      const t = await api.paperAddTrigger(account, {
         symbol: sym, side, shares, trigger_price: price, condition: cond, note: "",
       });
       toast("ok", `已添加条件单 #${t.id}`);
@@ -191,7 +276,7 @@ function TriggerPanel({ trigs, onChange, toast }: {
 
   const check = async () => {
     try {
-      const r = await api.paperCheck();
+      const r = await api.paperCheck(account);
       toast("ok", `检查完成，待触发 ${r.pending} 个`);
       onChange();
     } catch (e) { toast("err", `检查失败：${e instanceof Error ? e.message : e}`); }
@@ -199,7 +284,7 @@ function TriggerPanel({ trigs, onChange, toast }: {
 
   const cancel = async (id: string) => {
     try {
-      await api.paperCancelTrigger(id);
+      await api.paperCancelTrigger(account, id);
       toast("ok", `已取消 ${id}`);
       onChange();
     } catch (e) { toast("err", `取消失败：${e instanceof Error ? e.message : e}`); }
@@ -224,6 +309,11 @@ function TriggerPanel({ trigs, onChange, toast }: {
       title="条件单"
       extra={<button onClick={check} className="rounded border border-line px-2 py-1 text-xs hover:border-slate-500">立即检查</button>}
     >
+      <p className="mb-2 text-xs text-slate-500">
+        {sched?.enabled
+          ? `盘中每分钟自动检查条件单 · 上次检查 ${sched.last_trigger_check ?? "—"}`
+          : "自动检查未启用，查看账户时检查"}
+      </p>
       <div className="mb-3 flex flex-wrap items-end gap-2 text-sm">
         <div className="w-56">
           <label className="mb-1 block text-xs text-slate-500">代码</label>
@@ -289,11 +379,11 @@ function TriggerPanel({ trigs, onChange, toast }: {
   );
 }
 
-function ResetCard({ onDone }: { onDone: () => void }) {
+function ResetCard({ account, onDone }: { account: string; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [cap, setCap] = useState(1_000_000);
   const reset = async () => {
-    await api.paperReset(cap);
+    await api.paperReset(account, cap);
     setOpen(false);
     onDone();
   };

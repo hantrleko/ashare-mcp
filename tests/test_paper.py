@@ -1,13 +1,13 @@
 """Offline tests for PaperAccount — quote feed is stubbed, state in tmp dir."""
 import pytest
 
+from ashare_mcp.trading.accounts import AccountStore
 from ashare_mcp.trading.paper import PaperAccount
 
 
 @pytest.fixture
 def acct(tmp_path, monkeypatch):
-    a = PaperAccount()
-    a.path = tmp_path / "paper.json"
+    a = PaperAccount(store=AccountStore(tmp_path / "paper.db"))
     a.reset(1_000_000.0)
     monkeypatch.setattr(a, "_quote",
                         lambda s: (10.0, 10.0, "测试股"))
@@ -40,6 +40,7 @@ def test_t1_sell_block_then_rollover(acct):
         acct.sell("600519", 100)
     # simulate next trading day
     acct.state["last_date"] = "2000-01-01"
+    acct._save()
     r = acct.sell("600519", 100)
     assert r["status"] == "filled"
     pos = acct.state["positions"]["600519"]
@@ -105,6 +106,7 @@ def test_equity_history_upsert(acct):
     assert len(acct.history()) == 1
     # a new day appends
     acct.state["history"][0]["date"] = "2000-01-01"
+    acct._save()
     acct.status()
     assert len(acct.history()) == 2
 
@@ -115,3 +117,94 @@ def test_history_survives_old_state_file(acct, tmp_path):
     acct._save()
     st = acct.status()  # setdefault path, must not raise
     assert acct.history()[-1]["equity"] == st["equity"]
+
+
+# ---------- multi-account ----------
+
+def test_two_accounts_isolated(tmp_path, monkeypatch):
+    store = AccountStore(tmp_path / "paper.db")
+    store.create("账户B", 500_000.0, account_id="acct2")
+    a1 = PaperAccount("default", store)
+    a2 = PaperAccount("acct2", store)
+    for a in (a1, a2):
+        monkeypatch.setattr(a, "_quote", lambda s: (10.0, 10.0, "T"))
+    a1.buy("600519", 100)
+    assert a1.positions()[0]["code"] == "600519"
+    assert a2.positions() == []
+    assert a2.status()["cash"] == 500_000.0
+
+
+def test_reload_sees_other_instance_writes(tmp_path, monkeypatch):
+    store = AccountStore(tmp_path / "paper.db")
+    a1 = PaperAccount("default", store)
+    monkeypatch.setattr(a1, "_quote", lambda s: (10.0, 10.0, "T"))
+    a1.buy("600519", 100)
+    a2 = PaperAccount("default", store)
+    monkeypatch.setattr(PaperAccount, "_quote", lambda self, s: (10.0, 10.0, "T"))
+    assert a2.positions()[0]["shares"] == 100
+
+
+def test_concurrent_modification_raises(tmp_path, monkeypatch):
+    store = AccountStore(tmp_path / "paper.db")
+    a1 = PaperAccount("default", store)
+    a2 = PaperAccount("default", store)
+    for a in (a1, a2):
+        monkeypatch.setattr(a, "_quote", lambda s: (10.0, 10.0, "T"))
+    a1.buy("600519", 100)          # rev -> 2
+    a2.state["cash"] -= 1.0        # a2 holds stale rev 1
+    with pytest.raises(RuntimeError, match="concurrently|修改"):
+        a2._save()
+
+
+def test_trigger_fill_persisted(tmp_path, monkeypatch):
+    store = AccountStore(tmp_path / "paper.db")
+    a = PaperAccount("default", store)
+    monkeypatch.setattr(a, "_quote", lambda s: (10.0, 10.0, "T"))
+    a.add_trigger("600519", "buy", 100, 9.5, "<=")
+    monkeypatch.setattr(a, "_quote", lambda s: (9.4, 10.0, "T"))
+    res = a.check_triggers()
+    assert res["triggers"][0]["status"] == "filled"
+    fresh = PaperAccount("default", store)
+    monkeypatch.setattr(PaperAccount, "_quote", lambda self, s: (9.4, 10.0, "T"))
+    assert fresh.triggers()[0]["status"] == "filled"
+    assert fresh.state["positions"]["600519"]["shares"] == 100
+
+
+def test_unknown_account_raises(tmp_path):
+    store = AccountStore(tmp_path / "paper.db")
+    with pytest.raises(KeyError):
+        PaperAccount("nope", store)
+
+
+def test_delete_default_refused(tmp_path):
+    store = AccountStore(tmp_path / "paper.db")
+    store.create_default()
+    with pytest.raises(ValueError):
+        store.delete("default")
+    with pytest.raises(KeyError):
+        store.delete("ghost")
+
+
+def test_legacy_json_migrated(tmp_path, monkeypatch):
+    monkeypatch.setenv("ASHARE_MCP_DATA_DIR", str(tmp_path))
+    legacy = tmp_path / "paper_account.json"
+    legacy.write_text('{"cash": 777.0, "initial_capital": 1000.0,'
+                      ' "positions": {}, "orders": [], "triggers": [],'
+                      ' "history": [], "last_date": "2025-01-01"}',
+                      encoding="utf-8")
+    store = AccountStore(tmp_path / "paper.db")
+    state, _ = store.load("default")
+    assert state["cash"] == 777.0
+    assert not legacy.exists()
+    assert (tmp_path / "paper_account.json.migrated").exists()
+
+
+def test_store_create_validation(tmp_path):
+    store = AccountStore(tmp_path / "paper.db")
+    store.create("A", account_id="dup1")
+    with pytest.raises(ValueError):
+        store.create("B", account_id="dup1")
+    with pytest.raises(ValueError):
+        store.create("B", account_id="Bad Id!")
+    lst = store.list()
+    assert any(a["id"] == "dup1" and a["cash"] == 1_000_000.0 for a in lst)

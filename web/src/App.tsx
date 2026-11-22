@@ -1,4 +1,6 @@
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
+import { AccountProvider } from "./account";
+import { AccountSwitcher } from "./components/AccountSwitcher";
 import { SearchBox } from "./components/SearchBox";
 import { ToastProvider } from "./components/Toast";
 import Home from "./pages/Home";
@@ -17,6 +19,7 @@ const LINKS = [
 export default function App() {
   return (
     <ToastProvider>
+      <AccountProvider>
       <HashRouter>
         <div className="flex min-h-full flex-col">
           <header className="sticky top-0 z-30 border-b border-line bg-[#0b0e14]/95 backdrop-blur">
@@ -40,7 +43,10 @@ export default function App() {
                   </NavLink>
                 ))}
               </nav>
-              <SearchBox className="ml-auto w-56 sm:w-72" />
+              <div className="ml-auto flex items-center gap-3">
+                <AccountSwitcher />
+                <SearchBox className="w-56 sm:w-72" />
+              </div>
             </div>
           </header>
 
@@ -59,6 +65,7 @@ export default function App() {
           </footer>
         </div>
       </HashRouter>
+      </AccountProvider>
     </ToastProvider>
   );
 }

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from ..backtest.engine import STRATEGIES, run_backtest
 from ..data.facade import market_data
+from ..trading.accounts import AccountStore
 from ..trading.paper import PaperAccount
 
 # Same board as the Streamlit app (红涨绿跌 UI convention lives in the frontend).
@@ -82,25 +83,55 @@ def _run(fn: Callable[..., Any], *args: Any, ttl: float = 0.0, **kwargs: Any) ->
     return {"data": res, "source": source}
 
 
-# ---------- paper account (lazy singleton, lock-guarded mutations) ----------
+# ---------- paper accounts (per-id cache + per-id lock) ----------
 
-_acct_lock = threading.Lock()
-_acct: PaperAccount | None = None
-
-
-def _account() -> PaperAccount:
-    global _acct
-    if _acct is None:
-        with _acct_lock:
-            if _acct is None:
-                _acct = PaperAccount()
-    return _acct
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+_accts: dict[str, PaperAccount] = {}
+_store: "AccountStore | None" = None
 
 
-def _mutate(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+def _account_store() -> "AccountStore":
+    global _store
+    if _store is None:
+        _store = AccountStore()
+    return _store
+
+
+def _lock_for(account: str) -> threading.Lock:
+    with _locks_guard:
+        if account not in _locks:
+            _locks[account] = threading.Lock()
+        return _locks[account]
+
+
+def _account(account: str = "default") -> PaperAccount:
+    with _locks_guard:
+        if account not in _accts:
+            _accts[account] = PaperAccount(account, _account_store())
+        return _accts[account]
+
+
+def _mutate(fn: Callable[..., Any], *args: Any, account: str = "default",
+            **kwargs: Any) -> Any:
+    """Run ``fn(acct, *args)`` under the account's lock.
+
+    ``fn`` is an unbound PaperAccount method; the account is resolved
+    inside the try so an unknown id maps to 404 rather than 502.
+    """
     try:
-        with _acct_lock:
-            return fn(*args, **kwargs)
+        acct = _account(account)
+        with _lock_for(account):
+            return fn(acct, *args, **kwargs)
+    except HTTPException:
+        raise
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        code = 409 if "concurrently" in str(e) or "已被" in str(e) else 502
+        raise HTTPException(status_code=code, detail=str(e))
     except Exception as e:
         raise _err(e)
 
@@ -136,7 +167,17 @@ class BacktestIn(BaseModel):
 
 # ---------- app ----------
 
-app = FastAPI(title="ashare-mcp web", version="0.1.0")
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    from . import scheduler
+    scheduler.start()
+    yield
+
+
+app = FastAPI(title="ashare-mcp web", version="0.1.0", lifespan=_lifespan)
 
 
 @app.exception_handler(Exception)
@@ -246,62 +287,119 @@ def earnings(report_date: str = "", kind: str = "yjbb") -> dict[str, Any]:
 # ---------- paper trading ----------
 
 @app.get("/api/paper/status")
-def paper_status() -> dict[str, Any]:
-    return _mutate(_account().status)
+def paper_status(account: str = "default") -> dict[str, Any]:
+    return _mutate(PaperAccount.status, account=account)
 
 
 @app.get("/api/paper/positions")
-def paper_positions() -> dict[str, Any]:
-    try:
-        return {"data": _account().positions()}
-    except Exception as e:
-        raise _err(e)
+def paper_positions(account: str = "default") -> dict[str, Any]:
+    return {"data": _mutate(PaperAccount.positions, account=account)}
 
 
 @app.get("/api/paper/orders")
-def paper_orders(limit: int = 50) -> dict[str, Any]:
-    return {"data": _account().orders(limit)}
+def paper_orders(limit: int = 50, account: str = "default") -> dict[str, Any]:
+    return {"data": _mutate(PaperAccount.orders, limit, account=account)}
 
 
 @app.get("/api/paper/triggers")
-def paper_triggers() -> dict[str, Any]:
-    return {"data": _account().triggers()}
+def paper_triggers(account: str = "default") -> dict[str, Any]:
+    return {"data": _mutate(PaperAccount.triggers, account=account)}
 
 
 @app.get("/api/paper/history")
-def paper_history() -> dict[str, Any]:
-    return {"data": _account().history()}
+def paper_history(account: str = "default") -> dict[str, Any]:
+    return {"data": _mutate(PaperAccount.history, account=account)}
 
 
 @app.post("/api/paper/buy")
-def paper_buy(body: TradeIn) -> dict[str, Any]:
-    return _mutate(_account().buy, body.symbol, body.shares)
+def paper_buy(body: TradeIn, account: str = "default") -> dict[str, Any]:
+    return _mutate(PaperAccount.buy, body.symbol, body.shares,
+                   account=account)
 
 
 @app.post("/api/paper/sell")
-def paper_sell(body: TradeIn) -> dict[str, Any]:
-    return _mutate(_account().sell, body.symbol, body.shares)
+def paper_sell(body: TradeIn, account: str = "default") -> dict[str, Any]:
+    return _mutate(PaperAccount.sell, body.symbol, body.shares,
+                   account=account)
 
 
 @app.post("/api/paper/triggers")
-def paper_add_trigger(body: TriggerIn) -> dict[str, Any]:
-    return _mutate(_account().add_trigger, body.symbol, body.side,
-                   body.shares, body.trigger_price, body.condition, body.note)
+def paper_add_trigger(body: TriggerIn, account: str = "default") -> dict[str, Any]:
+    return _mutate(PaperAccount.add_trigger, body.symbol, body.side,
+                   body.shares, body.trigger_price, body.condition,
+                   body.note, account=account)
 
 
 @app.delete("/api/paper/triggers/{trigger_id}")
-def paper_cancel_trigger(trigger_id: str) -> dict[str, Any]:
-    return _mutate(_account().cancel_trigger, trigger_id)
+def paper_cancel_trigger(trigger_id: str,
+                         account: str = "default") -> dict[str, Any]:
+    return _mutate(PaperAccount.cancel_trigger, trigger_id,
+                   account=account)
 
 
 @app.post("/api/paper/check")
-def paper_check() -> dict[str, Any]:
-    return _mutate(_account().check_triggers)
+def paper_check(account: str = "default") -> dict[str, Any]:
+    return _mutate(PaperAccount.check_triggers, account=account)
 
 
 @app.post("/api/paper/reset")
-def paper_reset(body: ResetIn) -> dict[str, Any]:
-    return _mutate(_account().reset, body.capital)
+def paper_reset(body: ResetIn, account: str = "default") -> dict[str, Any]:
+    return _mutate(PaperAccount.reset, body.capital, account=account)
+
+
+# ---------- accounts ----------
+
+class AccountIn(BaseModel):
+    name: str
+    capital: float = 1_000_000.0
+    id: str | None = None
+
+
+class RenameIn(BaseModel):
+    name: str
+
+
+def _store_call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    try:
+        return fn(*args, **kwargs)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/accounts")
+def accounts_list() -> dict[str, Any]:
+    _account("default")  # ensure the default account exists before listing
+    return {"data": _account_store().list()}
+
+
+@app.post("/api/accounts")
+def accounts_create(body: AccountIn) -> dict[str, Any]:
+    return _store_call(_account_store().create, body.name, body.capital,
+                       body.id or None)
+
+
+@app.patch("/api/accounts/{account_id}")
+def accounts_rename(account_id: str, body: RenameIn) -> dict[str, Any]:
+    return _store_call(_account_store().rename, account_id, body.name)
+
+
+@app.delete("/api/accounts/{account_id}")
+def accounts_delete(account_id: str) -> dict[str, Any]:
+    res = _store_call(_account_store().delete, account_id)
+    with _locks_guard:
+        _accts.pop(account_id, None)
+        _locks.pop(account_id, None)
+    return res
+
+
+# ---------- scheduler ----------
+
+@app.get("/api/scheduler")
+def scheduler_status() -> dict[str, Any]:
+    from . import scheduler
+    return scheduler.status()
 
 
 # ---------- backtest ----------

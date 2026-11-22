@@ -19,6 +19,7 @@ web = ["fastapi>=0.115", "uvicorn>=0.30"]
 [project.scripts]
 ashare-mcp-server = "ashare_mcp.server:main"
 ashare-web = "ashare_mcp.web.__main__:main"
+ashare-sync = "ashare_mcp.web.scheduler:sync_main"
 
 [build-system]
 requires = ["hatchling"]

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import ashare_mcp.web.api as api  # noqa: E402
 from ashare_mcp.data.facade import market_data  # noqa: E402
+from ashare_mcp.trading.accounts import AccountStore  # noqa: E402
 from ashare_mcp.trading.paper import PaperAccount  # noqa: E402
 
 
@@ -36,13 +37,17 @@ def _fake_call(name, *args, **kwargs):
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(market_data, "call", _fake_call)
-    acct = PaperAccount()
-    acct.path = tmp_path / "paper.json"
-    acct.reset(1_000_000.0)
-    monkeypatch.setattr(acct, "_quote", lambda s: (10.0, 10.0, "测试股"))
-    monkeypatch.setattr(api, "_acct", acct)
+    monkeypatch.setattr(PaperAccount, "_quote",
+                        lambda self, s: (10.0, 10.0, "测试股"))
+    api._store = AccountStore(tmp_path / "paper.db")
+    api._accts.clear()
+    api._locks.clear()
     api._cache._store.clear()
-    return TestClient(api.app)
+    c = TestClient(api.app)
+    yield c
+    api._store = None
+    api._accts.clear()
+    api._locks.clear()
 
 
 def test_health(client):
@@ -111,3 +116,106 @@ def test_unknown_symbol_502(client, monkeypatch):
     api._cache._store.clear()
     r = client.get("/api/quote/999999")
     assert r.status_code == 502
+
+
+# ---------- multi-account + scheduler ----------
+
+def test_accounts_crud(client):
+    r = client.get("/api/accounts")
+    assert r.status_code == 200
+    ids = [a["id"] for a in r.json()["data"]]
+    assert "default" in ids
+
+    r = client.post("/api/accounts", json={"name": "test1", "capital": 50000,
+                                           "id": "test1"})
+    assert r.status_code == 200 and r.json()["id"] == "test1"
+
+    r = client.patch("/api/accounts/test1", json={"name": "改名"})
+    assert r.status_code == 200
+    names = {a["id"]: a["name"] for a in
+             client.get("/api/accounts").json()["data"]}
+    assert names["test1"] == "改名"
+
+    r = client.delete("/api/accounts/test1")
+    assert r.status_code == 200
+    ids = [a["id"] for a in client.get("/api/accounts").json()["data"]]
+    assert "test1" not in ids
+
+    r = client.delete("/api/accounts/nope")
+    assert r.status_code == 404
+    r = client.delete("/api/accounts/default")
+    assert r.status_code == 400
+    r = client.post("/api/accounts", json={"name": "x", "id": "BAD ID!"})
+    assert r.status_code == 400
+
+
+def test_paper_unknown_account_404(client):
+    r = client.get("/api/paper/status?account=nope")
+    assert r.status_code == 404
+    client.post("/api/accounts", json={"name": "x", "id": "x1"})
+    client.delete("/api/accounts/x1")
+    r = client.get("/api/paper/status?account=x1")
+    assert r.status_code == 404
+
+
+def test_bad_capital_400(client):
+    r = client.post("/api/accounts",
+                    json={"name": "x", "capital": 0, "id": "x1"})
+    assert r.status_code == 400
+    r = client.post("/api/paper/reset", json={"capital": -1})
+    assert r.status_code == 400
+
+
+def test_paper_account_isolation(client):
+    client.post("/api/accounts", json={"name": "t", "id": "test1"})
+    r = client.post("/api/paper/buy?account=test1",
+                    json={"symbol": "600519", "shares": 100})
+    assert r.status_code == 200
+    st = client.get("/api/paper/status?account=test1").json()
+    assert st["position_count"] == 1
+    st = client.get("/api/paper/status").json()  # default unaffected
+    assert st["position_count"] == 0
+    pos = client.get("/api/paper/positions?account=test1").json()["data"]
+    assert pos[0]["code"] == "600519"
+
+
+def test_scheduler_endpoint(client):
+    r = client.get("/api/scheduler")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["enabled"] is False  # ASHARE_WEB_SCHEDULER=0 in conftest
+    assert "last_settlement_date" in body
+
+
+def test_trigger_tick_and_settle(client, monkeypatch):
+    from ashare_mcp.web import scheduler
+
+    client.get("/api/paper/status")  # lazily create the default account
+    # trigger check: account with a pending trigger gets checked
+    client.post("/api/accounts", json={"name": "t", "id": "test1"})
+    r = client.post("/api/paper/triggers?account=test1", json={
+        "symbol": "600519", "side": "buy", "shares": 100,
+        "trigger_price": 20.0, "condition": "<=", "note": ""})
+    assert r.status_code == 200
+    n = scheduler.trigger_tick()
+    assert n == 1
+    trig = client.get("/api/paper/triggers?account=test1").json()["data"]
+    assert trig[0]["status"] == "filled"  # price 10 <= 20 → fired
+
+    # settle: holiday check (get_index_kline stub says last bar != today)
+    today = scheduler._now().date().isoformat()
+    not_today = lambda *a, **k: ([{"date": "2000-01-01"}], "fake")
+    res = scheduler.settle_tick(get_index_kline=not_today)
+    assert res["skipped"] == "not a trading day"
+
+    traded = lambda *a, **k: ([{"date": today}], "fake")
+    warmed = {"n": 0}
+    def fake_kline(*a, **k):
+        warmed["n"] += 1
+        return ([], "fake")
+    monkeypatch.setattr(scheduler.time, "sleep", lambda s: None)
+    scheduler._state["last_settlement_date"] = None
+    res = scheduler.settle_tick(force=True, get_index_kline=traded,
+                                get_kline=fake_kline)
+    assert len(res["accounts"]) >= 2
+    assert scheduler._state["last_settlement_date"] == today

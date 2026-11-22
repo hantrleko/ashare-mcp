@@ -70,6 +70,19 @@ export interface Trigger {
 
 export interface EquityPoint { date: string; equity: number }
 
+export interface AccountInfo {
+  id: string; name: string; created_at: string; updated_at: string;
+  initial_capital: number | null; cash: number | null;
+  last_equity: number | null; position_count: number;
+}
+
+export interface SchedulerStatus {
+  enabled: boolean;
+  last_trigger_check: string | null;
+  last_settlement_date: string | null;
+  last_error: string | null;
+}
+
 export interface Trade {
   date: string; side: string; price: number; shares: number;
   amount: number; fee: number; pnl?: number;
@@ -117,21 +130,47 @@ export const api = {
   earnings: (reportDate: string, kind: string) =>
     req<Resp<Record<string, unknown>[]>>(`/earnings?report_date=${reportDate}&kind=${kind}`),
 
-  paperStatus: () => req<PaperStatus>("/paper/status"),
-  paperPositions: () => req<{ data: Position[] }>("/paper/positions"),
-  paperOrders: (limit = 50) => req<{ data: Order[] }>(`/paper/orders?limit=${limit}`),
-  paperTriggers: () => req<{ data: Trigger[] }>("/paper/triggers"),
-  paperHistory: () => req<{ data: EquityPoint[] }>("/paper/history"),
-  paperBuy: (symbol: string, shares: number) =>
-    req<Record<string, unknown>>("/paper/buy", post({ symbol, shares })),
-  paperSell: (symbol: string, shares: number) =>
-    req<Record<string, unknown>>("/paper/sell", post({ symbol, shares })),
-  paperAddTrigger: (t: Omit<Trigger, "id" | "created_at" | "status">) =>
-    req<Trigger>("/paper/triggers", post(t)),
-  paperCancelTrigger: (id: string) =>
-    req<Trigger>(`/paper/triggers/${enc(id)}`, { method: "DELETE" }),
-  paperCheck: () => req<{ triggers: Trigger[]; pending: number }>("/paper/check", { method: "POST" }),
-  paperReset: (capital: number) => req<Record<string, unknown>>("/paper/reset", post({ capital })),
+  accounts: () => req<{ data: AccountInfo[] }>("/accounts"),
+  accountCreate: (name: string, capital: number, id?: string) =>
+    req<AccountInfo>("/accounts", post({ name, capital, ...(id ? { id } : {}) })),
+  accountRename: (id: string, name: string) =>
+    req<AccountInfo>(`/accounts/${enc(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  accountDelete: (id: string) =>
+    req<Record<string, unknown>>(`/accounts/${enc(id)}`, { method: "DELETE" }),
+  scheduler: () => req<SchedulerStatus>("/scheduler"),
+
+  paperStatus: (account: string) =>
+    req<PaperStatus>(`/paper/status?account=${enc(account)}`),
+  paperPositions: (account: string) =>
+    req<{ data: Position[] }>(`/paper/positions?account=${enc(account)}`),
+  paperOrders: (account: string, limit = 50) =>
+    req<{ data: Order[] }>(`/paper/orders?limit=${limit}&account=${enc(account)}`),
+  paperTriggers: (account: string) =>
+    req<{ data: Trigger[] }>(`/paper/triggers?account=${enc(account)}`),
+  paperHistory: (account: string) =>
+    req<{ data: EquityPoint[] }>(`/paper/history?account=${enc(account)}`),
+  paperBuy: (account: string, symbol: string, shares: number) =>
+    req<Record<string, unknown>>(`/paper/buy?account=${enc(account)}`,
+      post({ symbol, shares })),
+  paperSell: (account: string, symbol: string, shares: number) =>
+    req<Record<string, unknown>>(`/paper/sell?account=${enc(account)}`,
+      post({ symbol, shares })),
+  paperAddTrigger: (account: string,
+                    t: Omit<Trigger, "id" | "created_at" | "status">) =>
+    req<Trigger>(`/paper/triggers?account=${enc(account)}`, post(t)),
+  paperCancelTrigger: (account: string, id: string) =>
+    req<Trigger>(`/paper/triggers/${enc(id)}?account=${enc(account)}`,
+      { method: "DELETE" }),
+  paperCheck: (account: string) =>
+    req<{ triggers: Trigger[]; pending: number }>(
+      `/paper/check?account=${enc(account)}`, { method: "POST" }),
+  paperReset: (account: string, capital: number) =>
+    req<Record<string, unknown>>(`/paper/reset?account=${enc(account)}`,
+      post({ capital })),
 
   backtest: (b: BacktestIn) => req<BacktestResult>("/backtest", post(b)),
 };

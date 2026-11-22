@@ -18,6 +18,7 @@ def test_tools_registered():
         "paper_orders", "paper_reset",
         "paper_add_trigger", "paper_triggers", "paper_cancel_trigger",
         "paper_check_triggers",
+        "paper_list_accounts", "paper_create_account",
         "run_backtest", "provider_status",
     }
     assert expected <= names, f"missing: {expected - names}"

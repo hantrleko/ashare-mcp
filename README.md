@@ -26,12 +26,13 @@ fallback with rate-limit cooldown), **tushare** automatic fallback when
 | 行情数据 | `search_stock` `get_quote` `get_quotes` `get_kline` `get_index_quote` `get_index_kline` `get_market_overview` `get_limit_pool` `get_money_flow` | 搜索/实时报价/日周月K/指数/涨跌家数/涨停跌停池/主力资金流 |
 | 事件与因子 | `get_earnings_calendar` `get_announcements` `get_factor_snapshot` | 业绩报表/预告/快报、公告查询、动量/波动/Beta/均线位置因子快照 |
 | 财务基本面 | `get_financial_abstract` `get_financial_statement` | 财务指标摘要 + 利润表/资产负债表/现金流量表 |
-| 模拟盘 | `paper_status` `paper_buy` `paper_sell` `paper_positions` `paper_orders` `paper_reset` | 1手=100股、T+1、±10/20/30/5%涨跌停、佣金万2.5+印花税万5+过户费万0.1，JSON持久化 |
+| 模拟盘 | `paper_status` `paper_buy` `paper_sell` `paper_positions` `paper_orders` `paper_reset` | 1手=100股、T+1、±10/20/30/5%涨跌停、佣金万2.5+印花税万5+过户费万0.1，SQLite 多账户持久化 |
+| 账户管理 | `paper_list_accounts` `paper_create_account` | 多模拟账户；所有 `paper_*` 工具均可加 `account` 参数（默认 `default`） |
 | 条件单 | `paper_add_trigger` `paper_triggers` `paper_cancel_trigger` `paper_check_triggers` | 触发价买卖（突破/止损/低吸），查账户时自动评估成交 |
 | 策略回测 | `run_backtest` | `ma_cross`/`momentum`/`grid`/`buy_hold`，信号收盘产生、次日开盘成交，无未来函数 |
 | 数据源 | `provider_status` | akshare 主源状态、tushare token 配置检查 |
 
-共 **26 个工具**。
+共 **28 个工具**。
 
 ## 安装
 
@@ -123,6 +124,15 @@ cd web; npm run dev   # http://127.0.0.1:5173
 环境变量：`ASHARE_WEB_HOST`（默认 127.0.0.1）、`ASHARE_WEB_PORT`
 （默认 8600）、`ASHARE_WEB_DIST`（默认 `<repo>/web/dist`）。
 
+## 本地数据存储 / Local storage
+
+- `data/market.db` — **K线本地缓存（可随意删除）**。日K首次全量拉取后按结算点（A股 15:30 CST）增量同步；除权导致前/后复权基准变化时自动全量重抓；盘中未收盘的当日K只返回不落库。`ASHARE_MCP_STORE=0` 可完全禁用（直连网络）。
+- `data/paper.db` — **模拟账户（多账户，非缓存）**。旧版 `data/paper_account.json` 首次启动自动迁移为 `default` 账户，原文件保留为 `paper_account.json.migrated`。
+- **MCP**：所有 `paper_*` 工具接受 `account` 参数（默认 `"default"`）；`paper_list_accounts` / `paper_create_account` 管理账户。
+- **Web 调度器**（uvicorn 内守护线程）：交易时段（9:30–11:30 / 13:00–15:00 CST）每分钟为有待触发条件单的账户跑 `check_triggers`；每日 15:35 后为所有账户落当日净值、并预热持仓/条件单个股与九大指数的 K线缓存。`ASHARE_WEB_SCHEDULER=0` 关闭；`GET /api/scheduler` 查状态。
+- **`ashare-sync` CLI**：立即跑一次每日结算+缓存预热；`--force` 跳过节假日判断。
+- 已知限制：盘中条件单检查不区分工作日与交易所节假日——节假日盘中会用最近收盘价评估条件单（不会成交到不存在的行情）。
+
 ## Streamlit 看板（轻量旧版）
 
 ```powershell
@@ -166,14 +176,17 @@ scripts/build_page.py     # 生成 docs/index.html（GitHub Pages 快照页）
 docs/index.html           # 静态展示页（每日自动刷新）
 .github/workflows/        # refresh-page.yml 定时重建
 src/ashare_mcp/
-├── server.py             # FastMCP 入口，19 个工具
+├── server.py             # FastMCP 入口，28 个工具
 ├── config.py             # env 配置、数据目录
 ├── utils.py              # 代码/日期归一化、重采样
 ├── data/                 # facade + akshare + tushare
-├── trading/paper.py      # 模拟盘引擎（JSON 状态）
+├── trading/paper.py      # 模拟盘引擎（SQLite 多账户）
+├── trading/accounts.py   # 账户存储（paper.db）
+├── data/store.py         # K线本地缓存（market.db）
 ├── backtest/engine.py    # 日线回测器
 └── web/                  # FastAPI 后端（/api + SPA 静态托管）
-data/paper_account.json   # 模拟盘状态（gitignored）
+data/paper.db             # 模拟账户状态（gitignored）
+data/market.db            # K线缓存（可随时删除）
 ```
 
 ## Disclaimer

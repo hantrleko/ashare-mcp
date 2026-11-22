@@ -9,6 +9,7 @@ import { boll, macd, rsi, sma, toPts } from "../indicators";
 import { Card, ErrorBanner, PctText, Skeleton, Spinner, useChart } from "../components/ui";
 import { DOWN, UP, fmtAmount, fmtPct, fmtPrice, fmtSigned, todayYmd } from "../format";
 import { useToast } from "../components/Toast";
+import { useAccount } from "../account";
 
 type RangeKey = "1y" | "3y" | "5y" | "all";
 type Indicator = "none" | "macd" | "rsi";
@@ -290,15 +291,17 @@ function QuickTrade({ code, quote, toast }: {
   const [cash, setCash] = useState<number | null>(null);
   const [sellable, setSellable] = useState(0);
   const price = quote?.price ?? 0;
+  const { account } = useAccount();
 
   const refresh = useCallback(async () => {
     try {
-      const [st, pos] = await Promise.all([api.paperStatus(), api.paperPositions()]);
+      const [st, pos] = await Promise.all([
+        api.paperStatus(account), api.paperPositions(account)]);
       setCash(st.cash);
       const p = pos.data.find((x) => x.code === code);
       setSellable(p?.available ?? 0);
     } catch { /* offline */ }
-  }, [code]);
+  }, [code, account]);
   useEffect(() => { refresh(); }, [refresh]);
 
   const amount = price * shares;
@@ -310,8 +313,8 @@ function QuickTrade({ code, quote, toast }: {
     setBusy(true);
     try {
       const r = side === "buy"
-        ? await api.paperBuy(code, shares)
-        : await api.paperSell(code, shares);
+        ? await api.paperBuy(account, code, shares)
+        : await api.paperSell(account, code, shares);
       toast("ok", `${side === "buy" ? "买入" : "卖出"}成交 ${r.code} ${r.shares}股 @ ${r.price}`);
       refresh();
     } catch (e) {
