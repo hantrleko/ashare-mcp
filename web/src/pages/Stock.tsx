@@ -277,10 +277,13 @@ function KChart({ bars, ind, boll: showBoll, onHover, cost, orders }: {
       });
     }
     if (orders && orders.length) {
-      const barDates = new Set(bars.map((b) => b.date));
+      const barDates = [...new Set(bars.map((b) => b.date))].sort();
       const markers = orders.flatMap((o) => {
-        const t = String(o.time).slice(0, 10);
-        if (!barDates.has(t)) return [];
+        const d = String(o.time).slice(0, 10);
+        // map to the last bar on/before the order date (non-trading days roll back)
+        let t = "";
+        for (const bd of barDates) { if (bd <= d) t = bd; else break; }
+        if (!t) return [];
         const buy = o.side === "buy";
         return [{
           time: t,

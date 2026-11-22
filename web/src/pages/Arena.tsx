@@ -9,8 +9,16 @@ import { useChart } from "../components/chart";
 import { useToast } from "../components/Toast";
 import { toDay, inp, Field } from "../components/bt_shared";
 import { ddClass, fmtDD, fmtPct, signedClass } from "../format";
+import { NEED_KEY, useCanMutate } from "../auth";
 
 const COLORS = ["#ef5350", "#42a5f5", "#ffa726", "#ab47bc", "#26a69a"];
+
+/** 内置选手 strategy blurbs, keyed by account id. */
+export const HOUSE_DESC: Record<string, string> = {
+  house_trend: "收盘价站上MA20且MA20>MA60，按20日涨幅取前10，周度调仓",
+  house_value: "PE(TTM)≤15且PB≤1.5，按估算ROE取前10，月度调仓",
+  house_momentum: "按60日涨幅取前10，周度调仓",
+};
 
 function OverlayChart({ lb }: { lb: ArenaLeaderboard }) {
   const { ref, chart } = useChart({ height: 240 });
@@ -143,11 +151,25 @@ export default function Arena() {
   const [lb, setLb] = useState<ArenaLeaderboard | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [regOpen, setRegOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const canMutate = useCanMutate();
   const load = () =>
     api.arenaLeaderboard().then(setLb).catch(setErr);
   useEffect(() => { load(); }, []);
 
   const rows = lb?.agents ?? [];
+  const hasHouse = rows.some((a) => a.kind === "house");
+  const enableHouse = async () => {
+    setBusy(true);
+    try {
+      await api.houseEnable();
+      toast("ok", "内置选手已启用");
+      load();
+    } catch (e) {
+      toast("err", String((e as Error).message));
+    } finally { setBusy(false); }
+  };
   const topColors = useMemo(
     () => new Map(rows.slice(0, 5).map((a, i) => [a.id, COLORS[i]])),
     [rows]);
@@ -161,10 +183,20 @@ export default function Arena() {
             AI Agent 模拟盘实时排行 · {lb?.as_of?.slice(0, 19).replace("T", " ")}
           </p>
         </div>
-        <button className="rounded bg-up px-3 py-1.5 text-sm font-medium text-white"
-                onClick={() => setRegOpen(true)}>
-          报名 Agent
-        </button>
+        <div className="flex gap-2">
+          {lb && !hasHouse && (
+            <button className="rounded border border-line px-3 py-1.5 text-sm text-slate-200 hover:bg-panel2 disabled:opacity-40"
+                    disabled={busy || !canMutate}
+                    title={canMutate ? "创建 3 个内置规则策略选手" : NEED_KEY}
+                    onClick={enableHouse}>
+              {busy ? "启用中…" : "启用内置选手"}
+            </button>
+          )}
+          <button className="rounded bg-up px-3 py-1.5 text-sm font-medium text-white"
+                  onClick={() => setRegOpen(true)}>
+            报名 Agent
+          </button>
+        </div>
       </div>
 
       {err != null && <ErrorBanner error={err} onRetry={load} />}
@@ -226,6 +258,12 @@ export default function Arena() {
                               className="font-medium text-slate-100 hover:underline">
                           {a.name}
                         </Link>
+                        {a.kind === "house" && (
+                          <span className="ml-1.5 rounded bg-[#7b7ff2]/20 px-1.5 py-0.5 text-[10px] text-[#aab0ff]"
+                                title={HOUSE_DESC[a.id] ?? "内置规则策略"}>
+                            内置
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 pr-2">
                         {a.model

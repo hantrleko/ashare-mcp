@@ -1,16 +1,43 @@
-"""MCP server entrypoint: A-share market data, paper trading, backtest, fundamentals."""
+"""MCP server entrypoint: A-share market data, paper trading, backtest, fundamentals.
+
+Tools are served over stdio (``python -m ashare_mcp.server``) and over
+streamable HTTP when mounted by the web app at ``/mcp``.  In public
+mode (``ASHARE_WEB_PUBLIC=1``) HTTP callers must present an admin or
+agent Bearer key; agent keys are restricted to their own account.
+"""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
+from . import auth
 from .backtest.engine import STRATEGIES, run_backtest
 from .data.facade import market_data
 from .trading.accounts import AccountStore
 from .trading.paper import PaperAccount
 
-mcp = FastMCP("ashare-mcp")
+
+def _allowed_hosts() -> list[str]:
+    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    extra = os.environ.get("ASHARE_MCP_ALLOWED_HOSTS", "")
+    hosts += [h.strip() for h in extra.split(",") if h.strip()]
+    return hosts
+
+
+mcp = FastMCP(
+    "ashare-mcp",
+    stateless_http=True,
+    streamable_http_path="/",
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=_allowed_hosts(),
+        allowed_origins=["http://127.0.0.1:*", "http://localhost:*",
+                         "http://[::1]:*",
+                         "https://127.0.0.1:*", "https://localhost:*",
+                         "https://[::1]:*"]),
+)
 
 _store_instance: AccountStore | None = None
 
@@ -24,7 +51,38 @@ def _store() -> AccountStore:
 _accounts: dict[str, PaperAccount] = {}
 
 
+def _resolve_account(account: str = "default",
+                     admin_only: bool = False) -> str:
+    """Resolve the effective account for the current request context.
+
+    stdio and local HTTP are unchanged.  Public-mode HTTP: admin keys
+    act on any account; agent keys may only touch their own account
+    (``account`` empty/"default" resolves to it) and cannot run
+    admin_only tools.
+    """
+    try:
+        req = mcp.get_context().request_context.request
+    except Exception:
+        req = None
+    if req is None or not auth.PUBLIC:
+        return account
+    raw = auth.bearer_token(req.headers.get("authorization", ""))
+    role, key_acct = auth.resolve_role(raw, auth.ADMIN_KEY, _store())
+    if role == "admin":
+        return account
+    if role != "agent":
+        raise PermissionError("需要 API Key（Authorization: Bearer …）")
+    if admin_only:
+        raise PermissionError("agent key 无权执行该操作")
+    if account in ("", "default"):
+        return key_acct
+    if account != key_acct:
+        raise PermissionError("agent key 只能操作自己的账户")
+    return account
+
+
 def _acct(account: str = "default") -> PaperAccount:
+    account = _resolve_account(account)
     if account not in _accounts:
         _accounts[account] = PaperAccount(account)
     return _accounts[account]
@@ -410,6 +468,7 @@ def paper_create_account(name: str, capital: float = 1_000_000.0,
     """Create a new paper-trading account. account_id optional
     (a-z0-9_- max 32); empty -> random 8-char id."""
     try:
+        _resolve_account(admin_only=True)
         return _store().create(name, capital, account_id or None)
     except Exception as e:
         return _err(e)
@@ -430,6 +489,7 @@ def arena_register(name: str, model: str = "", capital: float = 1_000_000.0,
     Attach a 'reason' to every order — it is shown on the arena replay.
 """
     try:
+        _resolve_account(admin_only=True)
         acct = _store().create(name, capital, account_id or None,
                                kind="agent", model=model, arena=True)
         return {"account_id": acct["id"], "name": acct["name"],

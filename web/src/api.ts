@@ -236,6 +236,7 @@ export interface AuthMe {
 
 export interface ArenaRow {
   id: string; name: string; model: string; rank: number;
+  kind?: string;
   equity: number; initial_capital: number; return: number;
   excess: number | null; max_drawdown: number; sharpe: number | null;
   num_trades: number; win_rate: number | null; turnover: number;
@@ -248,12 +249,26 @@ export interface ArenaLeaderboard {
 }
 export interface ArenaDetail extends ArenaRow {
   created_at: string | null;
+  kind?: string;
   series: { date: string; equity: number; benchmark: number | null }[];
   positions: { code: string; name: string; shares: number;
                avg_cost: number; last_price: number; market_value: number;
                pnl: number }[];
   trades: Order[];
   benchmark: string;
+}
+
+export interface HousePlan {
+  plan_date: string; exec_date: string | null; status: string;
+  targets: { code: string; name: string; rank: number;
+             metrics?: Record<string, number>;
+             note?: string }[];
+  log: { action: string; code?: string; shares?: number;
+         ok?: boolean; error?: string }[];
+}
+export interface HouseEnableResult {
+  created: string[]; agents: string[];
+  plans: Record<string, HousePlan>;
 }
 
 const enc = encodeURIComponent;
@@ -354,6 +369,12 @@ export const api = {
   arenaRevoke: (id: string) =>
     req<{ revoked: number }>(`/arena/agents/${enc(id)}/keys/revoke`,
       post({})),
+  houseEnable: () => req<HouseEnableResult>("/arena/house/enable", post({})),
+  houseRun: (action: "plan" | "execute", force = false) =>
+    req<Record<string, HousePlan>>("/arena/house/run",
+      post({ action, force })),
+  housePlans: (id: string) =>
+    req<{ plans: HousePlan[] }>(`/arena/house/plans/${enc(id)}`),
 };
 
 function post(body: unknown): RequestInit {

@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { LineSeries } from "lightweight-charts";
-import { api, type ArenaDetail } from "../api";
+import { api, type ArenaDetail, type HousePlan } from "../api";
+import { HOUSE_DESC } from "./Arena";
 import { Card, ErrorBanner, Skeleton } from "../components/ui";
 import { useChart } from "../components/chart";
 import { M, toDay } from "../components/bt_shared";
@@ -35,8 +36,15 @@ export default function ArenaAgent() {
   const { id = "" } = useParams();
   const [d, setD] = useState<ArenaDetail | null>(null);
   const [err, setErr] = useState<unknown>(null);
+  const [plan, setPlan] = useState<HousePlan | null>(null);
 
-  const load = () => api.arenaAgent(id).then(setD).catch(setErr);
+  const load = () => api.arenaAgent(id).then((r) => {
+    setD(r);
+    if (r.kind === "house") {
+      api.housePlans(id).then((p) => setPlan(p.plans[0] ?? null))
+        .catch(() => setPlan(null));
+    }
+  }).catch(setErr);
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (err) return <ErrorBanner error={err} onRetry={load} />;
@@ -54,10 +62,18 @@ export default function ArenaAgent() {
             {d.model}
           </span>
         )}
+        {d.kind === "house" && (
+          <span className="rounded bg-[#7b7ff2]/20 px-1.5 py-0.5 text-xs text-[#aab0ff]">
+            内置
+          </span>
+        )}
         <span className={`num text-sm ${signedClass(d.return)}`}>
           {fmtPct(d.return * 100)}
         </span>
       </div>
+      {d.kind === "house" && HOUSE_DESC[d.id] && (
+        <p className="text-xs text-slate-500">策略：{HOUSE_DESC[d.id]}</p>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <M label="净值" v={fmtNum(d.equity, 0)} />
@@ -75,6 +91,54 @@ export default function ArenaAgent() {
       <Card title="净值 vs 基准" className="overflow-hidden">
         <EquityChart d={d} />
       </Card>
+
+      {plan && (
+        <Card title={`调仓计划 ${plan.plan_date} → 执行日 ${plan.exec_date ?? "—"}（${plan.status === "executed" ? "已执行" : "待执行"}）`}>
+          {plan.targets.length === 0 ? (
+            <p className="text-sm text-slate-500">本期无入选标的</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] text-xs">
+                <thead>
+                  <tr className="border-b border-line text-left text-slate-500">
+                    <th className="py-1.5 pr-2 font-normal">#</th>
+                    <th className="py-1.5 pr-2 font-normal">代码</th>
+                    <th className="py-1.5 pr-2 font-normal">名称</th>
+                    <th className="py-1.5 pr-2 font-normal">指标</th>
+                    <th className="py-1.5 font-normal">理由</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.targets.map((t) => (
+                    <tr key={t.code} className="border-b border-line/40">
+                      <td className="num py-1.5 pr-2">{t.rank}</td>
+                      <td className="num py-1.5 pr-2">
+                        <Link to={`/stock/${t.code}`} className="text-slate-200 hover:underline">{t.code}</Link>
+                      </td>
+                      <td className="py-1.5 pr-2">{t.name}</td>
+                      <td className="num py-1.5 pr-2 text-slate-400">
+                        {Object.entries(t.metrics ?? {}).map(([k, v]) => `${k}=${v}`).join(" ")}
+                      </td>
+                      <td className="py-1.5 text-slate-500">{t.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {plan.log.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs">
+              {plan.log.map((l, i) => (
+                <li key={i} className={l.error ? "text-down" : "text-slate-400"}>
+                  {l.action === "buy" ? "买入" : l.action === "sell" ? "卖出" : l.action}
+                  {l.code ? ` ${l.code}` : ""}{l.shares ? ` ${l.shares}股` : ""}
+                  {l.error ? ` — ${l.error}` : l.ok ? " ✓" : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
 
       <Card title={`持仓（${d.positions.length}）`}>
         {d.positions.length === 0 ? (

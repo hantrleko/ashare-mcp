@@ -164,6 +164,7 @@ def leaderboard(benchmark: str = "sh000300",
         series[a["id"]] = m["series"]
         rows.append({
             "id": a["id"], "name": a["name"], "model": a.get("model", ""),
+            "kind": a.get("kind", "manual"),
             "created_at": a.get("created_at"),
             **{k: v for k, v in m.items()
                if k not in ("series", "positions")},
@@ -220,6 +221,7 @@ def agent_detail(account_id: str, benchmark: str = "sh000300",
     trades = list(reversed(st.get("orders") or []))
     return {
         "id": account_id, "name": meta["name"], "model": meta.get("model", ""),
+        "kind": meta.get("kind", "manual"),
         "created_at": meta.get("created_at"),
         **{k: v for k, v in m.items() if k not in ("series", "positions")},
         "series": series,

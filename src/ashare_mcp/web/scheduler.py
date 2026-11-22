@@ -92,7 +92,41 @@ def trigger_tick() -> int:
             _state["last_error"] = f"trigger {aid}: {e}"
             log.exception("trigger check failed for %s", aid)
     _state["last_trigger_check"] = _now().isoformat(timespec="seconds")
+    # built-in arena agents: execute today's rebalance plan at/after 09:31
+    try:
+        from ..trading import house
+        now = _now()
+
+        def _locked_acct(aid: str):
+            return _LockedHouseAcct(aid, lock_for(aid), account(aid))
+        house.trigger_hook(now.strftime("%H:%M"), now.date(),
+                           store, _locked_acct)
+    except Exception as e:
+        _state["last_error"] = f"house exec: {e}"
     return n
+
+
+class _LockedHouseAcct:
+    """Wraps PaperAccount so house trades run under the account lock."""
+    def __init__(self, aid, lock, acct):
+        self._aid, self._lock, self._acct = aid, lock, acct
+
+    @property
+    def state(self):
+        # PaperAccount reloads state on every mutation; always read through
+        return self._acct.state
+
+    def __getattr__(self, k):
+        return getattr(self._acct, k)
+    def buy(self, *a, **kw):
+        with self._lock:
+            return self._acct.buy(*a, **kw)
+    def sell(self, *a, **kw):
+        with self._lock:
+            return self._acct.sell(*a, **kw)
+    def status(self):
+        with self._lock:
+            return self._acct.status()
 
 
 def _traded_today(get_index_kline: Callable, today: str) -> bool:
@@ -147,6 +181,14 @@ def settle_tick(force: bool = False, get_index_kline: Callable | None = None,
             report["errors"].append(f"{aid}: {e}")
             log.exception("settlement failed for %s", aid)
 
+    # built-in arena agents: plan the next session's rebalance when it
+    # opens a new week/month
+    try:
+        from ..trading import house
+        house.settle_hook(_now().date(), store)
+    except Exception as e:
+        report["errors"].append(f"house plan: {e}")
+
     for sym in sorted(symbols):
         try:
             get_kline(sym, adjust="qfq", start_date="20200101")
@@ -194,9 +236,20 @@ def sync_main(argv: list[str] | None = None) -> None:
                                 description="Run daily settlement now")
     p.add_argument("--force", action="store_true",
                    help="also skip the trading-day (holiday) check")
+    p.add_argument("--house", choices=["plan", "execute"],
+                   help="run a built-in arena-agent action instead "
+                        "of the daily settlement")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
+    if args.house:
+        from ..trading import house
+        today = _now().date()
+        if args.house == "plan":
+            print(house.run_plans(today, force=args.force))
+        else:
+            print(house.run_executes(today, force=args.force))
+        return
     today = _now().date().isoformat()
     if args.force:
         res = settle_tick(force=True)

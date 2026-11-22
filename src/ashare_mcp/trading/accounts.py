@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS api_keys(
   label TEXT DEFAULT '',
   created_at TEXT,
   revoked INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS house_plans(
+  account_id TEXT NOT NULL,
+  plan_date TEXT NOT NULL,
+  exec_date TEXT,
+  targets TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'planned',
+  log TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY(account_id, plan_date));
 """
 
 # columns added after the initial schema — migrated idempotently

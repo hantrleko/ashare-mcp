@@ -8,8 +8,6 @@ Run: ``python -m ashare_mcp.web`` (uvicorn, default http://127.0.0.1:8600).
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import threading
 import time
@@ -20,6 +18,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from .. import auth
 from ..backtest.engine import STRATEGIES, run_backtest
 from ..data.facade import market_data
 from ..trading.accounts import AccountStore
@@ -71,13 +70,16 @@ def _call(name: str, *args: Any, ttl: float = 0.0, **kwargs: Any) -> tuple[Any, 
 
 # ---------- auth + rate limiting (public mode only) ----------
 
-PUBLIC = os.environ.get("ASHARE_WEB_PUBLIC") == "1"
-_ADMIN_KEY = os.environ.get("ASHARE_ADMIN_KEY", "")
+# env-derived flags live in ashare_mcp.auth; these module-level copies
+# stay monkeypatchable for tests.
+PUBLIC = auth.PUBLIC
+_ADMIN_KEY = auth.ADMIN_KEY
 
 # token-bucket limits (per minute)
 RATE_MUT = 30      # mutations, keyed by API key else IP
 RATE_HEAVY = 6     # /api/screen + /api/backtest* per IP
 RATE_GET = 120     # other GETs per IP
+RATE_MCP = 120     # /mcp streamable-HTTP, per verified identity else IP
 
 _buckets: dict[tuple[str, str], list[float]] = {}
 _buckets_lock = threading.Lock()
@@ -100,19 +102,13 @@ def _bucket(key: tuple[str, str], limit: int, now: float) -> float:
 
 
 def _bearer(request: Request) -> str:
-    auth = request.headers.get("authorization", "")
-    return auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    return auth.bearer_token(request.headers.get("authorization", ""))
 
 
 def _role(request: Request) -> tuple[str, str | None]:
     """(role, account_id) — admin | agent | anonymous."""
-    raw = _bearer(request)
-    if not raw:
-        return "anonymous", None
-    if _ADMIN_KEY and hmac.compare_digest(raw, _ADMIN_KEY):
-        return "admin", None
-    acct = _account_store().verify_key(raw)
-    return ("agent", acct) if acct else ("anonymous", None)
+    return auth.resolve_role(_bearer(request), _ADMIN_KEY,
+                             _account_store())
 
 
 def _client_ip(request: Request) -> str:
@@ -286,7 +282,10 @@ async def _lifespan(app: FastAPI):
             "ASHARE_WEB_PUBLIC=1 requires ASHARE_ADMIN_KEY to be set")
     from . import scheduler
     scheduler.start()
-    yield
+    # mounted streamable-HTTP MCP app: its session manager is not run
+    # by the sub-app itself, so it must run inside our lifespan.
+    async with mcp.session_manager.run():
+        yield
 
 
 app = FastAPI(title="ashare-mcp web", version="0.4.0", lifespan=_lifespan)
@@ -299,7 +298,15 @@ async def _rate_limit(request: Request, call_next):
     path = request.url.path
     now = time.monotonic()
     ip = _client_ip(request)
-    if path == "/api/screen" or path.startswith("/api/backtest"):
+    if path.startswith("/mcp"):
+        role, acct = _role(request)
+        if role == "anonymous":
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "MCP 需要 API Key（Authorization: Bearer …）"})
+        ident = "admin" if role == "admin" else (acct or ip)
+        wait = _bucket(("mcp", ident), RATE_MCP, now)
+    elif path == "/api/screen" or path.startswith("/api/backtest"):
         wait = _bucket(("heavy", ip), RATE_HEAVY, now)
     elif request.method != "GET":
         # only a verified key gets its own bucket; anything else counts per IP
@@ -727,6 +734,51 @@ def peers(symbol: str, limit: int = 30) -> dict[str, Any]:
         raise _err(e)
 
 
+class HouseRunIn(BaseModel):
+    action: str = "plan"      # plan | execute
+    force: bool = False
+
+
+@app.post("/api/arena/house/enable")
+def house_enable(request: Request) -> dict[str, Any]:
+    _require_mutation(request, None, account_scoped=False)
+    try:
+        from ..trading import house
+        return house.enable(_account_store())
+    except Exception as e:
+        raise _err(e)
+
+
+@app.post("/api/arena/house/run")
+def house_run(body: HouseRunIn, request: Request) -> dict[str, Any]:
+    _require_mutation(request, None, account_scoped=False)
+    from ..trading import house
+    from datetime import date as _date
+    try:
+        today = _date.today()
+        if body.action == "plan":
+            return house.run_plans(today, force=body.force,
+                                   store=_account_store())
+        if body.action == "execute":
+            return house.run_executes(today, force=body.force,
+                                      store=_account_store(),
+                                      acct_fn=_account)
+        raise HTTPException(400, "action must be 'plan' or 'execute'")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _err(e)
+
+
+@app.get("/api/arena/house/plans/{account_id}")
+def house_plans(account_id: str) -> dict[str, Any]:
+    from ..trading import house
+    try:
+        return {"plans": house.plans_for(_account_store(), account_id, 5)}
+    except Exception as e:
+        raise _err(e)
+
+
 @app.get("/api/industries")
 def industries() -> dict[str, Any]:
     from ..research.industry import list_industries
@@ -736,6 +788,21 @@ def industries() -> dict[str, Any]:
 @app.get("/api/strategies")
 def strategies() -> dict[str, Any]:
     return {"data": list(STRATEGIES)}
+
+
+# ---------- MCP over streamable HTTP ----------
+
+from ..server import mcp  # noqa: E402
+from fastapi.responses import RedirectResponse  # noqa: E402
+
+
+@app.api_route("/mcp", methods=["GET", "POST", "DELETE"])
+def _mcp_slash_redirect():
+    return RedirectResponse("/mcp/", status_code=307)
+
+
+# Mounted before the SPA catch-all so POST/GET /mcp reaches FastMCP.
+app.mount("/mcp", mcp.streamable_http_app(), name="mcp")
 
 
 # ---------- static frontend (SPA) ----------
