@@ -11,11 +11,49 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
+import threading
 from typing import Any
 
 import akshare as ak
 import numpy as np
 import pandas as pd
+
+
+def _patch_mini_racer() -> None:
+    """Serialize py_mini_racer entry points.
+
+    akshare uses MiniRacer (V8 via a native dll) for JS-encoded sina
+    responses; concurrent use segfaults the whole process.  Patching the
+    class methods with one RLock covers every import style akshare uses,
+    while leaving other providers (e.g. Tencent/EM) fully concurrent.
+    Idempotent: skips classes already patched.
+    """
+    try:
+        from py_mini_racer import MiniRacer
+    except Exception:
+        return
+    if getattr(MiniRacer, "_ashare_lock_patched", False):
+        return
+    lock = threading.RLock()
+
+    def wrap(name: str) -> None:
+        fn = getattr(MiniRacer, name, None)
+        if fn is None or getattr(fn, "_ashare_wrapped", False):
+            return
+
+        def locked(self: Any, *a: Any, _fn: Any = fn, **k: Any) -> Any:
+            with lock:
+                return _fn(self, *a, **k)
+
+        locked._ashare_wrapped = True  # type: ignore[attr-defined]
+        setattr(MiniRacer, name, locked)
+
+    for name in ("__init__", "eval", "execute", "call"):
+        wrap(name)
+    MiniRacer._ashare_lock_patched = True  # type: ignore[attr-defined]
+
+
+_patch_mini_racer()
 
 from ..utils import (
     _market_of,
@@ -584,7 +622,7 @@ def get_kline(symbol: str, period: str = "daily",
             _kline_daily(symbol, s, e, adjust)[0], "daily"))
     df = _norm_kline(df, period)
     df["code"] = code6
-    return df_records(df[_KLINE_COLS])
+    return df_records(df.reindex(columns=_KLINE_COLS))
 
 
 def get_index_kline(symbol: str = "sh000001", period: str = "daily",
@@ -597,7 +635,7 @@ def get_index_kline(symbol: str = "sh000001", period: str = "daily",
         fetch=lambda s, e: _norm_kline(ak.index_zh_daily_sina(symbol=idx), "daily"))
     df = _norm_kline(df, period)
     df["code"] = idx
-    return df_records(df[_KLINE_COLS])
+    return df_records(df.reindex(columns=_KLINE_COLS))
 
 
 def _iso(yyyymmdd: str) -> str:

@@ -435,6 +435,56 @@ def run_backtest(symbol: str, strategy: str = "ma_cross",
 
 
 @mcp.tool()
+def run_portfolio_backtest(symbols: list[str], weighting: str = "equal",
+                           rebalance: str = "M", start_date: str = "",
+                           end_date: str = "", capital: float = 1_000_000.0,
+                           slippage_bps: float = 0.0,
+                           min_trade_value: float = 5000.0,
+                           benchmark: str = "sh000300") -> dict[str, Any]:
+    """Backtest a 2–50 stock portfolio.
+
+    weighting: "equal" | "inverse_vol" (1/vol of last 60 daily returns).
+    rebalance: "W"|"M"|"Q" — first trading day of each period, orders at
+    open from weights computed on the previous close. Suspended symbols
+    are valued at last close and skipped; limit-up/down opens block
+    orders. Returns metrics vs benchmark (sh000300/sh000905/sh000001),
+    excess annual return, turnover, per-symbol contribution, holdings
+    and rebalance log.
+    """
+    try:
+        from .backtest.portfolio import run_portfolio_backtest as _r
+        return _r(symbols, weighting, rebalance, start_date, end_date,
+                  capital, slippage_bps, min_trade_value, benchmark)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
+def scan_backtest_params(symbol: str, strategy: str,
+                         grid: dict, start_date: str = "",
+                         end_date: str = "", split: float = 0.7,
+                         metric: str = "sharpe",
+                         capital: float = 1_000_000.0,
+                         slippage_bps: float = 0.0,
+                         min_trade_value: float = 5000.0) -> dict[str, Any]:
+    """In/out-of-sample grid scan of one strategy's params.
+
+    strategy: "ma_cross" (fast,slow) | "momentum" (lookback,threshold)
+      | "grid" (grids,calib). grid: {param: [values]} (<=100 combos).
+    Splits the series at `split` (default 0.7), optimizes `metric`
+    ("sharpe"|"total_return"|"annual_return"|"max_drawdown") in-sample,
+    and reports the IS-best combo's out-of-sample metrics and rank.
+    """
+    try:
+        from .backtest.engine import scan_backtest
+        return scan_backtest(symbol, strategy, grid, start_date, end_date,
+                             split, metric, capital, slippage_bps,
+                             min_trade_value)
+    except Exception as e:
+        return _err(e)
+
+
+@mcp.tool()
 def provider_status() -> dict[str, Any]:
     """Which data providers are configured (akshare primary, tushare fallback)."""
     try:

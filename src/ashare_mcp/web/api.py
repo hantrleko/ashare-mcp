@@ -167,6 +167,31 @@ class BacktestIn(BaseModel):
     min_trade_value: float = 5000.0
 
 
+class PortfolioIn(BaseModel):
+    symbols: list[str]
+    weighting: str = "equal"
+    rebalance: str = "M"
+    start: str = ""
+    end: str = ""
+    capital: float = 1_000_000.0
+    slippage_bps: float = 0.0
+    min_trade_value: float = 5000.0
+    benchmark: str = "sh000300"
+
+
+class ScanIn(BaseModel):
+    symbol: str
+    strategy: str = "ma_cross"
+    grid: dict[str, list[float]] = Field(default_factory=dict)
+    start: str = ""
+    end: str = ""
+    split: float = 0.7
+    metric: str = "sharpe"
+    capital: float = 1_000_000.0
+    slippage_bps: float = 0.0
+    min_trade_value: float = 5000.0
+
+
 class ScreenIn(BaseModel):
     ranges: dict[str, list[float | None]] = Field(default_factory=dict)
     industries: list[str] = Field(default_factory=list)
@@ -459,6 +484,41 @@ def backtest(body: BacktestIn) -> dict[str, Any]:
     return {**res, "benchmark": bench.get("equity_curve", [])}
 
 
+@app.post("/api/backtest/portfolio")
+def backtest_portfolio(body: PortfolioIn) -> dict[str, Any]:
+    import json
+    from ..backtest.portfolio import run_portfolio_backtest
+    args = body.model_dump()
+    key = ("bt_portfolio", json.dumps(args, sort_keys=True, default=str))
+    try:
+        return _cache.get(key, TTL_SLOW, lambda: run_portfolio_backtest(
+            args["symbols"], args["weighting"], args["rebalance"],
+            args["start"], args["end"], args["capital"],
+            args["slippage_bps"], args["min_trade_value"],
+            args["benchmark"]))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _err(e)
+
+
+@app.post("/api/backtest/scan")
+def backtest_scan(body: ScanIn) -> dict[str, Any]:
+    import json
+    from ..backtest.engine import scan_backtest
+    args = body.model_dump()
+    key = ("bt_scan", json.dumps(args, sort_keys=True, default=str))
+    try:
+        return _cache.get(key, TTL_SLOW, lambda: scan_backtest(
+            args["symbol"], args["strategy"], args["grid"],
+            args["start"], args["end"], args["split"], args["metric"],
+            args["capital"], args["slippage_bps"], args["min_trade_value"]))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _err(e)
+
+
 @app.post("/api/screen")
 def screen_stocks(body: ScreenIn) -> dict[str, Any]:
     from ..research.screener import screen
@@ -491,10 +551,13 @@ def _resolve_dist() -> Path:
     env = os.environ.get("ASHARE_WEB_DIST", "").strip()
     if env:
         return Path(env)
+    repo_dist = REPO_ROOT / "web" / "dist"
+    if (repo_dist / "index.html").is_file():
+        return repo_dist  # dev checkout: always use the freshest build
     pkg_static = Path(__file__).resolve().parent / "static"
     if (pkg_static / "index.html").is_file():
-        return pkg_static
-    return REPO_ROOT / "web" / "dist"
+        return pkg_static  # installed wheel
+    return repo_dist
 
 
 _dist = _resolve_dist()

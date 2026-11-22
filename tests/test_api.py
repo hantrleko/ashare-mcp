@@ -37,6 +37,8 @@ def _fake_call(name, *args, **kwargs):
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(market_data, "call", _fake_call)
+    monkeypatch.setattr("ashare_mcp.backtest.engine._name_of",
+                        lambda c: "")
     monkeypatch.setattr(PaperAccount, "_quote",
                         lambda self, s: (10.0, 10.0, "测试股"))
     api._store = AccountStore(tmp_path / "paper.db")
@@ -251,13 +253,31 @@ def test_market_clock(client, monkeypatch):
     assert j["date"] in j["server_time"]  # server_time is China-time ISO
 
 
-def test_resolve_dist_prefers_package_static(tmp_path, monkeypatch):
-    static = tmp_path / "ashare_mcp" / "web" / "static"
-    static.mkdir(parents=True)
-    (static / "index.html").write_text("<html/>")
+def test_resolve_dist_prefers_repo_dist(tmp_path, monkeypatch):
+    """Dev order: repo web/dist beats the packaged static dir."""
+    pkg = tmp_path / "ashare_mcp" / "web"
+    (pkg / "static").mkdir(parents=True)
+    (pkg / "static" / "index.html").write_text("<html/>")
+    repo_dist = tmp_path / "web" / "dist"
+    repo_dist.mkdir(parents=True)
+    (repo_dist / "index.html").write_text("<html/>")
     monkeypatch.delenv("ASHARE_WEB_DIST", raising=False)
-    monkeypatch.setattr(api, "__file__", str(static.parent / "api.py"))
-    assert api._resolve_dist() == static
+    monkeypatch.setattr(api, "__file__", str(pkg / "api.py"))
+    monkeypatch.setattr(api, "REPO_ROOT", tmp_path)
+    assert api._resolve_dist() == repo_dist
+
+
+def test_resolve_dist_wheel_falls_back_to_package_static(tmp_path,
+                                                         monkeypatch):
+    """Installed wheel: no repo web/dist -> packaged static."""
+    pkg = tmp_path / "site" / "ashare_mcp" / "web"
+    (pkg / "static").mkdir(parents=True)
+    (pkg / "static" / "index.html").write_text("<html/>")
+    monkeypatch.delenv("ASHARE_WEB_DIST", raising=False)
+    monkeypatch.setattr(api, "__file__", str(pkg / "api.py"))
+    # REPO_ROOT points somewhere without web/dist
+    monkeypatch.setattr(api, "REPO_ROOT", tmp_path / "nowhere")
+    assert api._resolve_dist() == pkg / "static"
 
 
 def test_resolve_dist_env_override(tmp_path, monkeypatch):
@@ -297,3 +317,24 @@ def test_industries_endpoint(client, monkeypatch):
     r = client.get("/api/industries")
     assert r.status_code == 200
     assert r.json()["data"][0]["name"] == "白酒行业"
+
+
+def test_portfolio_and_scan_endpoints(client, monkeypatch):
+    import ashare_mcp.backtest.portfolio as pf
+    import ashare_mcp.backtest.engine as eng
+    def _fake_pf(*a, **k):
+        if len(a[0]) < 2:
+            raise ValueError("need >=2 symbols")
+        return {"symbols": a[0], "total_return": 0.1}
+    monkeypatch.setattr(pf, "run_portfolio_backtest", _fake_pf)
+    monkeypatch.setattr(eng, "scan_backtest",
+                        lambda *a, **k: {"results": [], "best_is": {}})
+    r = client.post("/api/backtest/portfolio", json={
+        "symbols": ["600001", "000002"]})
+    assert r.status_code == 200 and r.json()["total_return"] == 0.1
+    r = client.post("/api/backtest/scan", json={
+        "symbol": "000001", "strategy": "ma_cross",
+        "grid": {"fast": [5], "slow": [20]}})
+    assert r.status_code == 200
+    r = client.post("/api/backtest/portfolio", json={"symbols": ["600001"]})
+    assert r.status_code == 400

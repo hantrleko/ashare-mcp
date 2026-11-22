@@ -360,8 +360,15 @@ export default function Screener() {
         res ? `结果 ${res.matched} / ${res.total_universe}${res.as_of ? ` · ${res.as_of.slice(0, 16).replace("T", " ")}` : ""}` : "结果"
       } extra={
         <div className="flex items-center gap-2">
-          <button disabled className="rounded border border-line px-2 py-0.5 text-xs text-slate-500"
-            title="组合回测即将上线">组合回测{sel.size ? `(${sel.size})` : ""}（即将上线）</button>
+          <a href={sel.size >= 2 && sel.size <= 50
+              ? `#/backtest?mode=portfolio&codes=${[...sel].join(",")}&run=1` : undefined}
+            className={`rounded border border-line px-2 py-0.5 text-xs ${
+              sel.size >= 2 && sel.size <= 50
+                ? "text-slate-300 hover:bg-panel2"
+                : "pointer-events-none text-slate-600"}`}
+            title={sel.size >= 2 && sel.size <= 50 ? "对选中股票运行组合回测" : "勾选 2–50 只股票"}>
+            组合回测{sel.size ? `(${sel.size})` : ""}
+          </a>
           <button onClick={exportCsv} disabled={!res?.rows.length}
             className="rounded border border-line px-2 py-0.5 text-xs text-slate-300 hover:bg-panel2 disabled:opacity-40">
             导出 CSV

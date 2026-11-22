@@ -20,7 +20,7 @@ class MarketData:
                 continue
             try:
                 return fn(*args, **kwargs), name
-            except Exception as e:  # noqa: BLE001 - collect and try next provider
+            except Exception as e:  # noqa: BLE001 - collect, try next
                 errors.append(f"{name}: {e}")
         raise RuntimeError("all providers failed — " + " | ".join(errors))
 

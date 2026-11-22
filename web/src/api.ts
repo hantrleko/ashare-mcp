@@ -123,6 +123,51 @@ export interface BacktestIn {
   slippage_bps: number; min_trade_value: number;
 }
 
+export interface PortfolioIn {
+  symbols: string[]; weighting: string; rebalance: string;
+  start: string; end: string; capital: number;
+  slippage_bps: number; min_trade_value: number; benchmark: string;
+}
+export interface Holding { code: string; name: string; shares: number; value: number; weight: number | null }
+export interface PortfolioResult {
+  symbols: string[]; skipped_symbols: string[];
+  weighting: string; rebalance: string; benchmark: string;
+  start: string; end: string; capital: number; bars: number;
+  final_equity: number; total_return: number; annual_return: number;
+  max_drawdown: number; sharpe: number; num_trades: number;
+  benchmark_total_return: number; benchmark_annual_return: number;
+  benchmark_max_drawdown: number; excess_annual: number;
+  annual_turnover: number | null; num_rebalances: number;
+  blocked_orders: number;
+  equity_curve: { date: string; equity: number; benchmark: number }[];
+  monthly_returns: { month: string; ret: number }[];
+  contribution: { code: string; name: string; pnl: number }[];
+  final_holdings: Holding[];
+  rebalance_log: { date: string; orders: number; turnover: number }[];
+  trades: { date: string; symbol: string; side: string; price: number;
+            shares: number; amount: number; fee: number; pnl?: number }[];
+  notes: string[];
+}
+export interface ScanIn {
+  symbol: string; strategy: string; grid: Record<string, number[]>;
+  start: string; end: string; split: number; metric: string;
+  capital: number; slippage_bps: number; min_trade_value: number;
+}
+export interface ScanMetrics {
+  total_return: number; annual_return: number; sharpe: number;
+  max_drawdown: number; num_trades: number;
+}
+export interface ScanResult {
+  symbol: string; strategy: string; metric: string;
+  split: number; split_date: string; bars: number; capital: number;
+  results: { params: Record<string, number>; is: ScanMetrics; oos: ScanMetrics }[];
+  skipped: Record<string, number>[];
+  best_is: { params: Record<string, number>; is: ScanMetrics; oos: ScanMetrics };
+  oos_rank_of_best_is: number; num_combos: number;
+  axes?: { names: string[]; values: Record<string, number[]> };
+  notes: string[];
+}
+
 export interface ScreenIn {
   ranges?: Record<string, [number | null, number | null]>;
   industries?: string[];
@@ -221,6 +266,9 @@ export const api = {
       post({ capital })),
 
   backtest: (b: BacktestIn) => req<BacktestResult>("/backtest", post(b)),
+  backtestPortfolio: (b: PortfolioIn) =>
+    req<PortfolioResult>("/backtest/portfolio", post(b)),
+  backtestScan: (b: ScanIn) => req<ScanResult>("/backtest/scan", post(b)),
 
   screen: (b: ScreenIn) => req<ScreenResult>("/screen", post(b)),
   industries: () => req<{ data: IndustryInfo[] }>("/industries"),
