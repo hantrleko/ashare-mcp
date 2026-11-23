@@ -7,6 +7,13 @@ import { useChart } from "../components/chart";
 import { SearchBox } from "../components/SearchBox";
 import { Field, M, inp, toDay, DrawdownChart, MonthlyHeatmap } from "../components/bt_shared";
 import { DOWN, UP, ddClass, fmtDD, fmtNum, fmtPct, fmtSigned, signedClass, todayYmd } from "../format";
+import { X } from "lucide-react";
+import { cssVar, onThemeChange } from "../theme";
+import { BENCHMARK } from "../lib/palette";
+import { Button } from "@/components/ui/button";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 const BENCH = [
   { k: "sh000300", label: "沪深300" },
@@ -64,10 +71,13 @@ export default function BtPortfolio({ initial, autoRun }: {
       <Card title="组合参数">
         <div className="mb-2 flex flex-wrap gap-1.5">
           {codes.map((c) => (
-            <span key={c} className="flex items-center gap-1 rounded bg-panel2 px-2 py-1 text-xs">
+            <span key={c} className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs">
               <span className="num">{c}</span>{names[c] ?? ""}
               <button onClick={() => setCodes(codes.filter((x) => x !== c))}
-                className="text-slate-500 hover:text-slate-200">×</button>
+                aria-label={`移除 ${c}`}
+                className="cursor-pointer text-muted-foreground hover:text-foreground">
+                <X className="size-3" />
+              </button>
             </span>
           ))}
           {codes.length === 0 && <span className="text-xs text-slate-500">添加 2–50 只股票</span>}
@@ -97,10 +107,9 @@ export default function BtPortfolio({ initial, autoRun }: {
           <Field label="初始资金"><input type="number" value={capital} onChange={(e) => setCapital(Number(e.target.value))} className={inp} /></Field>
           <Field label="滑点(bps)"><input type="number" value={slip} onChange={(e) => setSlip(Number(e.target.value))} className={inp} /></Field>
           <div className="flex items-end">
-            <button onClick={run} disabled={busy || codes.length < 2}
-              className="w-full rounded bg-up/90 py-1.5 text-sm font-medium text-white hover:bg-up disabled:opacity-40">
+            <Button onClick={run} disabled={busy || codes.length < 2} className="w-full">
               {busy ? "回测中…" : "运行回测"}
-            </button>
+            </Button>
           </div>
         </div>
       </Card>
@@ -137,20 +146,20 @@ function PfResult({ res, names }: { res: PortfolioResult; names: Record<string, 
       {res.final_holdings.length > 0 && (
         <Card title="期末持仓">
           <div className="overflow-x-auto">
-            <table className="w-full whitespace-nowrap text-xs">
-              <thead><tr className="border-b border-line text-left text-slate-500">
-                {["代码", "名称", "股数", "市值", "权重"].map((h) => <th key={h} className="px-2 py-1.5 font-normal">{h}</th>)}
-              </tr></thead>
-              <tbody>{res.final_holdings.map((h) => (
-                <tr key={h.code} className="border-b border-line/40">
-                  <td className="px-2 py-1.5"><a href={`#/stock/${h.code}`} className="num text-accent hover:underline">{h.code}</a></td>
-                  <td className="px-2 py-1.5">{h.name || names[h.code] || "—"}</td>
-                  <td className="num px-2 py-1.5">{h.shares}</td>
-                  <td className="num px-2 py-1.5">{fmtNum(h.value)}</td>
-                  <td className="num px-2 py-1.5">{h.weight != null ? fmtPct(h.weight * 100) : "—"}</td>
-                </tr>))}
-              </tbody>
-            </table>
+            <Table className="whitespace-nowrap text-xs">
+              <TableHeader><TableRow className="hover:bg-transparent">
+                {["代码", "名称", "股数", "市值", "权重"].map((h) => <TableHead key={h}>{h}</TableHead>)}
+              </TableRow></TableHeader>
+              <TableBody>{res.final_holdings.map((h) => (
+                <TableRow key={h.code} className="hover:bg-muted/50">
+                  <TableCell><a href={`#/stock/${h.code}`} className="num text-accent hover:underline">{h.code}</a></TableCell>
+                  <TableCell>{h.name || names[h.code] || "—"}</TableCell>
+                  <TableCell className="num">{h.shares}</TableCell>
+                  <TableCell className="num">{fmtNum(h.value)}</TableCell>
+                  <TableCell className="num">{h.weight != null ? fmtPct(h.weight * 100) : "—"}</TableCell>
+                </TableRow>))}
+              </TableBody>
+            </Table>
           </div>
         </Card>
       )}
@@ -158,18 +167,18 @@ function PfResult({ res, names }: { res: PortfolioResult; names: Record<string, 
       {res.rebalance_log.length > 0 && (
         <Card title={`调仓记录（最近${res.rebalance_log.length}次）`}>
           <div className="max-h-56 overflow-x-auto">
-            <table className="w-full whitespace-nowrap text-xs">
-              <thead><tr className="border-b border-line text-left text-slate-500">
-                {["日期", "订单数", "成交额"].map((h) => <th key={h} className="px-2 py-1.5 font-normal">{h}</th>)}
-              </tr></thead>
-              <tbody>{[...res.rebalance_log].reverse().map((l, i) => (
-                <tr key={i} className="border-b border-line/40">
-                  <td className="num px-2 py-1.5 text-slate-400">{l.date}</td>
-                  <td className="num px-2 py-1.5">{l.orders}</td>
-                  <td className="num px-2 py-1.5">{fmtNum(l.turnover)}</td>
-                </tr>))}
-              </tbody>
-            </table>
+            <Table className="whitespace-nowrap text-xs">
+              <TableHeader><TableRow className="hover:bg-transparent">
+                {["日期", "订单数", "成交额"].map((h) => <TableHead key={h}>{h}</TableHead>)}
+              </TableRow></TableHeader>
+              <TableBody>{[...res.rebalance_log].reverse().map((l, i) => (
+                <TableRow key={i} className="hover:bg-muted/50">
+                  <TableCell className="num text-muted-foreground">{l.date}</TableCell>
+                  <TableCell className="num">{l.orders}</TableCell>
+                  <TableCell className="num">{fmtNum(l.turnover)}</TableCell>
+                </TableRow>))}
+              </TableBody>
+            </Table>
           </div>
         </Card>
       )}
@@ -184,17 +193,22 @@ function PfCurve({ res }: { res: PortfolioResult }) {
   const { ref, chart } = useChart({ height: 320 });
   useEffect(() => {
     if (!chart) return;
-    const s1 = chart.addSeries(LineSeries, { color: "#7b7ff2", lineWidth: 2, title: "组合" });
+    const s1 = chart.addSeries(LineSeries, {
+      color: cssVar("--color-accent"), lineWidth: 2, title: "组合",
+    });
     s1.setData(res.equity_curve.map((p) => ({ time: toDay(p.date), value: p.equity })));
-    const s2 = chart.addSeries(LineSeries, { color: "#8b93a7", lineWidth: 1, lineStyle: 2, title: "基准" });
+    const s2 = chart.addSeries(LineSeries, { color: BENCHMARK, lineWidth: 1, lineStyle: 2, title: "基准" });
     s2.setData(res.equity_curve.map((p) => ({ time: toDay(p.date), value: p.benchmark })));
     chart.timeScale().fitContent();
+    const off = onThemeChange(() =>
+      s1.applyOptions({ color: cssVar("--color-accent") }));
+    return () => off();
   }, [chart, res]);
   return (
     <div>
       <div className="mb-1 flex gap-4 text-xs text-slate-400">
-        <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#7b7ff2] align-middle" />组合</span>
-        <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#8b93a7] align-middle" />基准</span>
+        <span><span className="mr-1 inline-block h-0.5 w-4 bg-accent align-middle" />组合</span>
+        <span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: BENCHMARK }} />基准</span>
       </div>
       <div ref={ref} className="w-full min-w-0 overflow-hidden" />
     </div>

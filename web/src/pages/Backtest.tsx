@@ -2,13 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CandlestickSeries, LineSeries, createSeriesMarkers } from "lightweight-charts";
 import { api, type BacktestResult, type Bar } from "../api";
-import { Card, ErrorBanner } from "../components/ui";
+import { Card, EmptyState, ErrorBanner } from "../components/ui";
 import { useChart } from "../components/chart";
 import { SearchBox } from "../components/SearchBox";
 import { Field, M, inp, toDay, DrawdownChart, MonthlyHeatmap } from "../components/bt_shared";
 import BtPortfolio from "./BtPortfolio";
 import BtScan from "./BtScan";
 import { DOWN, UP, ddClass, fmtDD, fmtNum, fmtPct, fmtPrice, fmtSigned, signedClass, todayYmd } from "../format";
+import { cssVar, onThemeChange } from "../theme";
+import { BENCHMARK } from "../lib/palette";
+import { Button } from "@/components/ui/button";
+import { Input, Label, Select } from "@/components/ui/input";
+import { Seg } from "@/components/ui/tabs";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 const STRAT: Record<string, { label: string; desc: string; params: [string, string, number][] }> = {
   ma_cross: { label: "均线交叉", desc: "快线上穿慢线持有", params: [["fast", "快线周期", 5], ["slow", "慢线周期", 20]] },
@@ -53,15 +61,13 @@ export default function Backtest() {
 
 function TabBar({ mode, setSp }: { mode: string; setSp: ReturnType<typeof useSearchParams>[1] }) {
   return (
-    <div className="flex gap-1 rounded-lg border border-line bg-panel p-1">
-      {TABS.map(([k, label]) => (
-        <button key={k} onClick={() => setSp(k === "single" ? {} : { mode: k })}
-          className={`flex-1 rounded-md px-3 py-1.5 text-sm ${
-            mode === k ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"}`}>
-          {label}
-        </button>
-      ))}
-    </div>
+    <Seg
+      options={TABS}
+      value={mode}
+      onChange={(k) => setSp(k === "single" ? {} : { mode: k })}
+      className="flex w-full p-1"
+      btnClassName="flex-1 px-3 py-1.5 text-sm"
+    />
   );
 }
 
@@ -122,32 +128,32 @@ function SingleBacktest({ sp }: { sp: URLSearchParams }) {
       <Card title="回测参数">
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <div>
-            <label className="mb-1 block text-xs text-slate-500">代码</label>
+            <Label>代码</Label>
             <div className="flex gap-1">
-              <input value={symbol} onChange={(e) => setSymbol(e.target.value)}
-                className="num w-full rounded border border-line bg-panel2 px-2 py-1.5 text-sm outline-none" />
+              <Input value={symbol} onChange={(e) => setSymbol(e.target.value)}
+                className="num w-full" />
             </div>
             <SearchBox className="mt-1" onPick={(h) => setSymbol(h.code)} />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-500">策略</label>
-            <select value={strategy} onChange={(e) => {
+            <Label>策略</Label>
+            <Select value={strategy} onChange={(e) => {
               const s = e.target.value;
               setStrategy(s);
               const p: Record<string, string> = {};
               for (const [k, , d] of STRAT[s].params) p[k] = String(d);
               setParams(p);
-            }} className="w-full rounded border border-line bg-panel2 px-2 py-1.5 text-sm">
+            }} className="w-full">
               {Object.entries(STRAT).map(([k, v]) => (
                 <option key={k} value={k}>{v.label} — {v.desc}</option>
               ))}
-            </select>
+            </Select>
           </div>
           {STRAT[strategy].params.map(([k, label]) => (
             <div key={k}>
-              <label className="mb-1 block text-xs text-slate-500">{label}</label>
-              <input value={params[k] ?? ""} onChange={(e) => setParams({ ...params, [k]: e.target.value })}
-                className="num w-full rounded border border-line bg-panel2 px-2 py-1.5 text-sm outline-none" />
+              <Label>{label}</Label>
+              <Input value={params[k] ?? ""} onChange={(e) => setParams({ ...params, [k]: e.target.value })}
+                className="num w-full" />
             </div>
           ))}
           <Field label="开始日期"><input value={start} onChange={(e) => setStart(e.target.value)} className={inp} /></Field>
@@ -156,10 +162,9 @@ function SingleBacktest({ sp }: { sp: URLSearchParams }) {
           <Field label="滑点(bps)"><input type="number" value={slip} onChange={(e) => setSlip(Number(e.target.value))} className={inp} /></Field>
           <Field label="最小交易额"><input type="number" value={mtv} onChange={(e) => setMtv(Number(e.target.value))} className={inp} /></Field>
           <div className="flex items-end">
-            <button onClick={run} disabled={busy}
-              className="w-full rounded bg-up/90 py-1.5 text-sm font-medium text-white hover:bg-up disabled:opacity-40">
+            <Button onClick={run} disabled={busy} className="w-full">
               {busy ? "回测中…" : "运行回测"}
-            </button>
+            </Button>
           </div>
         </div>
       </Card>
@@ -200,32 +205,32 @@ function SingleBacktest({ sp }: { sp: URLSearchParams }) {
           {res.trades.length > 0 && (
             <Card title={`交易明细（最近${res.trades.length}笔）`}>
               <div className="max-h-80 overflow-x-auto">
-                <table className="w-full whitespace-nowrap text-xs">
-                  <thead>
-                    <tr className="border-b border-line text-left text-slate-500">
+                <Table className="whitespace-nowrap text-xs">
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
                       {["日期", "方向", "价格", "股数", "金额", "费用", "盈亏"].map((h) => (
-                        <th key={h} className="px-2 py-1.5 font-normal">{h}</th>
+                        <TableHead key={h}>{h}</TableHead>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {[...res.trades].reverse().map((t, i) => (
-                      <tr key={i} className="border-b border-line/40">
-                        <td className="num px-2 py-1.5 text-slate-400">{t.date}</td>
-                        <td className={`px-2 py-1.5 ${t.side === "buy" ? "text-up" : "text-down"}`}>
+                      <TableRow key={i} className="hover:bg-muted/50">
+                        <TableCell className="num text-muted-foreground">{t.date}</TableCell>
+                        <TableCell className={t.side === "buy" ? "text-up" : "text-down"}>
                           {t.side === "buy" ? "买入" : "卖出"}
-                        </td>
-                        <td className="num px-2 py-1.5">{fmtPrice(t.price)}</td>
-                        <td className="num px-2 py-1.5">{t.shares}</td>
-                        <td className="num px-2 py-1.5">{fmtNum(t.amount)}</td>
-                        <td className="num px-2 py-1.5">{t.fee.toFixed(2)}</td>
-                        <td className={`num px-2 py-1.5 ${signedClass(t.pnl)}`}>
+                        </TableCell>
+                        <TableCell className="num">{fmtPrice(t.price)}</TableCell>
+                        <TableCell className="num">{t.shares}</TableCell>
+                        <TableCell className="num">{fmtNum(t.amount)}</TableCell>
+                        <TableCell className="num">{t.fee.toFixed(2)}</TableCell>
+                        <TableCell className={`num ${signedClass(t.pnl)}`}>
                           {t.pnl != null ? fmtSigned(t.pnl) : "—"}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </Card>
           )}
@@ -239,17 +244,22 @@ function EquityVsBench({ res }: { res: BacktestResult }) {
   const { ref, chart } = useChart({ height: 320 });
   useEffect(() => {
     if (!chart) return;
-    const s1 = chart.addSeries(LineSeries, { color: "#7b7ff2", lineWidth: 2, title: "策略" });
+    const s1 = chart.addSeries(LineSeries, {
+      color: cssVar("--color-accent"), lineWidth: 2, title: "策略",
+    });
     s1.setData(res.equity_curve.map((p) => ({ time: toDay(p.date), value: p.equity })));
-    const s2 = chart.addSeries(LineSeries, { color: "#8b93a7", lineWidth: 1, lineStyle: 2, title: "买入持有" });
+    const s2 = chart.addSeries(LineSeries, { color: BENCHMARK, lineWidth: 1, lineStyle: 2, title: "买入持有" });
     s2.setData(res.benchmark.map((p) => ({ time: toDay(p.date), value: p.equity })));
     chart.timeScale().fitContent();
+    const off = onThemeChange(() =>
+      s1.applyOptions({ color: cssVar("--color-accent") }));
+    return () => off();
   }, [chart, res]);
   return (
     <div>
       <div className="mb-1 flex gap-4 text-xs text-slate-400">
-        <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#7b7ff2] align-middle" />策略</span>
-        <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#8b93a7] align-middle" />买入持有</span>
+        <span><span className="mr-1 inline-block h-0.5 w-4 bg-accent align-middle" />策略</span>
+        <span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: BENCHMARK }} />买入持有</span>
       </div>
       <div ref={ref} className="w-full min-w-0 overflow-hidden" />
     </div>
@@ -275,6 +285,6 @@ function PriceWithTrades({ bars, res }: { bars: Bar[]; res: BacktestResult }) {
     createSeriesMarkers(s, markers);
     chart.timeScale().fitContent();
   }, [chart, bars, res]);
-  if (!bars.length) return <p className="py-4 text-center text-sm text-slate-500">K线数据不可用，无法绘制交易点</p>;
+  if (!bars.length) return <EmptyState text="K线数据不可用，无法绘制交易点" />;
   return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Inbox, type LucideIcon } from "lucide-react";
 import { pctClass, fmtPct, fmtPrice } from "../format";
 
 export function Spinner({ label = "加载中…" }: { label?: string }) {
@@ -36,7 +37,7 @@ export function ErrorBanner({ error, onRetry }: { error: unknown; onRetry?: () =
 }
 
 export function Card({ title, children, className = "", extra }: {
-  title?: string; children: ReactNode; className?: string; extra?: ReactNode;
+  title?: ReactNode; children: ReactNode; className?: string; extra?: ReactNode;
 }) {
   return (
     <section className={`rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:p-5 ${className}`}>
@@ -48,6 +49,18 @@ export function Card({ title, children, className = "", extra }: {
       )}
       {children}
     </section>
+  );
+}
+
+/** Consistent empty state: centred icon + one line of muted text. */
+export function EmptyState({ icon: Icon = Inbox, text, className = "" }: {
+  icon?: LucideIcon; text: string; className?: string;
+}) {
+  return (
+    <div className={`flex flex-col items-center gap-2 py-6 text-sm text-muted-foreground ${className}`}>
+      <Icon className="size-6" />
+      <span>{text}</span>
+    </div>
   );
 }
 

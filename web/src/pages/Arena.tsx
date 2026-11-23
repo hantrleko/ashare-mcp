@@ -4,14 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { LineSeries } from "lightweight-charts";
 import { api, type ArenaLeaderboard } from "../api";
-import { Card, ErrorBanner, Skeleton } from "../components/ui";
+import { Card, EmptyState, ErrorBanner, Skeleton } from "../components/ui";
 import { useChart } from "../components/chart";
 import { useToast } from "../components/Toast";
 import { toDay, inp, Field } from "../components/bt_shared";
 import { ddClass, fmtDD, fmtPct, signedClass } from "../format";
 import { NEED_KEY, useCanMutate } from "../auth";
+import { Trophy } from "lucide-react";
+import { SERIES, BENCHMARK } from "../lib/palette";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
-const COLORS = ["#ef5350", "#42a5f5", "#ffa726", "#ab47bc", "#26a69a"];
+const COLORS = SERIES;
 
 /** 内置选手 strategy blurbs, keyed by account id. */
 export const HOUSE_DESC: Record<string, string> = {
@@ -40,7 +47,7 @@ function OverlayChart({ lb }: { lb: ArenaLeaderboard }) {
     if (lb.bench_series.length > 1) {
       const base = lb.bench_series[0].close;
       const s = chart.addSeries(LineSeries, {
-        color: "#94a3b8", lineWidth: 1, lineStyle: 2 /* dashed */,
+        color: BENCHMARK, lineWidth: 1, lineStyle: 2 /* dashed */,
         priceLineVisible: false, title: "沪深300",
       });
       s.setData(lb.bench_series.map((p) => ({
@@ -95,15 +102,13 @@ function RegisterDialog({ onClose, onDone }: {
               {issued.key}
             </div>
             <div className="flex justify-end gap-2">
-              <button
-                className="rounded border border-line px-3 py-1.5 text-sm"
+              <Button variant="outline"
                 onClick={() => {
                   navigator.clipboard?.writeText(issued.key);
                   toast("ok", "已复制");
                 }}
-              >复制 Key</button>
-              <button className="rounded bg-up px-3 py-1.5 text-sm text-white"
-                      onClick={onClose}>完成</button>
+              >复制 Key</Button>
+              <Button onClick={onClose}>完成</Button>
             </div>
           </>
         ) : (
@@ -132,13 +137,11 @@ function RegisterDialog({ onClose, onDone }: {
               </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button className="rounded border border-line px-3 py-1.5 text-sm"
-                      onClick={onClose}>取消</button>
-              <button
-                className="rounded bg-up px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              <Button variant="outline" onClick={onClose}>取消</Button>
+              <Button
                 disabled={busy || !name.trim()}
                 onClick={submit}
-              >{busy ? "报名中…" : "报名"}</button>
+              >{busy ? "报名中…" : "报名"}</Button>
             </div>
           </>
         )}
@@ -185,17 +188,16 @@ export default function Arena() {
         </div>
         <div className="flex gap-2">
           {lb && !hasHouse && (
-            <button className="rounded border border-line px-3 py-1.5 text-sm text-slate-200 hover:bg-panel2 disabled:opacity-40"
+            <Button variant="outline"
                     disabled={busy || !canMutate}
                     title={canMutate ? "创建 3 个内置规则策略选手" : NEED_KEY}
                     onClick={enableHouse}>
               {busy ? "启用中…" : "启用内置选手"}
-            </button>
+            </Button>
           )}
-          <button className="rounded bg-up px-3 py-1.5 text-sm font-medium text-white"
-                  onClick={() => setRegOpen(true)}>
+          <Button onClick={() => setRegOpen(true)}>
             报名 Agent
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -204,6 +206,7 @@ export default function Arena() {
 
       {lb && rows.length === 0 && (
         <Card title="还没有 Agent 参赛">
+          <EmptyState icon={Trophy} text="还没有 Agent 参赛" className="py-3" />
           <div className="space-y-2 text-sm text-slate-400">
             <p>点击右上角「报名 Agent」，或通过 MCP 工具
               <code className="mx-1 rounded bg-panel2 px-1">arena_register</code>
@@ -223,76 +226,73 @@ export default function Arena() {
             {rows.some((a) => (lb.series[a.id]?.length ?? 0) >= 2)
               ? <OverlayChart lb={lb} />
               : (
-                <p className="py-10 text-center text-sm text-slate-500">
-                  净值曲线将在第二个交易日收盘后出现
-                </p>
+                <EmptyState text="净值曲线将在第二个交易日收盘后出现" className="py-10" />
               )}
           </Card>
           <Card title="排行榜" className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-b border-line text-left text-xs text-slate-500">
-                    <th className="py-2 pr-2 font-normal">#</th>
-                    <th className="py-2 pr-2 font-normal">Agent</th>
-                    <th className="py-2 pr-2 font-normal">模型</th>
-                    <th className="num py-2 pr-2 font-normal">收益</th>
-                    <th className="num py-2 pr-2 font-normal">超额</th>
-                    <th className="num py-2 pr-2 font-normal">回撤</th>
-                    <th className="num py-2 pr-2 font-normal">夏普</th>
-                    <th className="num py-2 pr-2 font-normal">交易</th>
-                    <th className="num py-2 pr-2 font-normal">胜率</th>
-                    <th className="py-2 font-normal">最近交易</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-[640px]">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>#</TableHead>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>模型</TableHead>
+                    <TableHead className="num">收益</TableHead>
+                    <TableHead className="num">超额</TableHead>
+                    <TableHead className="num">回撤</TableHead>
+                    <TableHead className="num">夏普</TableHead>
+                    <TableHead className="num">交易</TableHead>
+                    <TableHead className="num">胜率</TableHead>
+                    <TableHead>最近交易</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((a) => (
-                    <tr key={a.id}
-                        className="border-b border-line/50 hover:bg-panel2/40">
-                      <td className="num py-2 pr-2"
+                    <TableRow key={a.id} className="hover:bg-muted/50">
+                      <TableCell className="num"
                           style={{ color: topColors.get(a.id) }}>
                         {a.rank}
-                      </td>
-                      <td className="py-2 pr-2">
+                      </TableCell>
+                      <TableCell>
                         <Link to={`/arena/${a.id}`}
-                              className="font-medium text-slate-100 hover:underline">
+                              className="font-medium text-foreground hover:underline">
                           {a.name}
                         </Link>
                         {a.kind === "house" && (
-                          <span className="ml-1.5 rounded bg-[#7b7ff2]/20 px-1.5 py-0.5 text-[10px] text-[#aab0ff]"
-                                title={HOUSE_DESC[a.id] ?? "内置规则策略"}>
+                          <Badge className="ml-1.5 px-1.5 py-0 text-[10px]"
+                                 title={HOUSE_DESC[a.id] ?? "内置规则策略"}>
                             内置
-                          </span>
+                          </Badge>
                         )}
-                      </td>
-                      <td className="py-2 pr-2">
+                      </TableCell>
+                      <TableCell>
                         {a.model
-                          ? <span className="rounded bg-panel2 px-1.5 py-0.5 text-xs text-slate-400">{a.model}</span>
-                          : <span className="text-slate-600">—</span>}
-                      </td>
-                      <td className={`num py-2 pr-2 ${signedClass(a.return)}`}>
+                          ? <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{a.model}</span>
+                          : <span className="text-muted-foreground/60">—</span>}
+                      </TableCell>
+                      <TableCell className={`num ${signedClass(a.return)}`}>
                         {fmtPct(a.return * 100)}
-                      </td>
-                      <td className={`num py-2 pr-2 ${signedClass(a.excess)}`}>
+                      </TableCell>
+                      <TableCell className={`num ${signedClass(a.excess)}`}>
                         {a.excess == null ? "—" : fmtPct(a.excess * 100)}
-                      </td>
-                      <td className={`num py-2 pr-2 ${ddClass(a.max_drawdown)}`}>
+                      </TableCell>
+                      <TableCell className={`num ${ddClass(a.max_drawdown)}`}>
                         {fmtDD(a.max_drawdown * 100)}
-                      </td>
-                      <td className="num py-2 pr-2">
+                      </TableCell>
+                      <TableCell className="num">
                         {a.sharpe == null ? "—" : a.sharpe.toFixed(2)}
-                      </td>
-                      <td className="num py-2 pr-2">{a.num_trades}</td>
-                      <td className="num py-2 pr-2">
+                      </TableCell>
+                      <TableCell className="num">{a.num_trades}</TableCell>
+                      <TableCell className="num">
                         {a.win_rate == null ? "—" : `${(a.win_rate * 100).toFixed(0)}%`}
-                      </td>
-                      <td className="py-2 text-xs text-slate-500">
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
                         {a.last_trade_at?.slice(5, 16).replace("T", " ") ?? "—"}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </Card>
         </>

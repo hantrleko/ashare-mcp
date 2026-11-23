@@ -5,41 +5,40 @@ import { Link, useParams } from "react-router-dom";
 import { LineSeries } from "lightweight-charts";
 import { api, type ArenaDetail, type HousePlan } from "../api";
 import { HOUSE_DESC } from "./Arena";
-import { Card, ErrorBanner, Skeleton } from "../components/ui";
+import { Card, EmptyState, ErrorBanner, Skeleton } from "../components/ui";
 import { useChart } from "../components/chart";
 import { M, toDay } from "../components/bt_shared";
 import { ddClass, fmtDD, fmtPct, fmtNum, fmtSigned, signedClass } from "../format";
-
-const METRIC_LABEL: Record<string, [string, boolean]> = {
-  pe_ttm: ["市盈率", false],
-  pb: ["市净率", false],
-  roe_est: ["估算ROE", true],
-  ret20: ["20日涨幅", true],
-  ret60: ["60日涨幅", true],
-};
-function fmtMetric(k: string, v: unknown): string {
-  const [label, isPct] = METRIC_LABEL[k] ?? [k, false];
-  return `${label} ${v}${isPct ? "%" : ""}`;
-}
+import { ArrowLeft, ArrowRight, Check, Inbox, LineChart } from "lucide-react";
+import { cssVar, onThemeChange } from "../theme";
+import { BENCHMARK } from "../lib/palette";
+import { fmtMetric, fmtReason } from "../lib/metrics";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 function EquityChart({ d }: { d: ArenaDetail }) {
   const { ref, chart } = useChart({ height: 240 });
   useEffect(() => {
     if (!chart || !d.series.length) return;
     const eq = chart.addSeries(LineSeries, {
-      color: "#ef5350", lineWidth: 2, priceLineVisible: false,
+      color: cssVar("--color-accent"), lineWidth: 2, priceLineVisible: false,
       title: "净值",
     });
     eq.setData(d.series.map((p) => ({ time: toDay(p.date), value: p.equity })));
     const bp = d.series.filter((p) => p.benchmark != null);
     if (bp.length) {
       const b = chart.addSeries(LineSeries, {
-        color: "#94a3b8", lineWidth: 1, lineStyle: 2,
+        color: BENCHMARK, lineWidth: 1, lineStyle: 2,
         priceLineVisible: false, title: "基准(同初始)",
       });
       b.setData(bp.map((p) => ({ time: toDay(p.date), value: p.benchmark! })));
     }
     chart.timeScale().fitContent();
+    const off = onThemeChange(() =>
+      eq.applyOptions({ color: cssVar("--color-accent") }));
+    return () => off();
   }, [chart, d]);
   return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
@@ -65,19 +64,17 @@ export default function ArenaAgent() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/arena" className="text-sm text-slate-500 hover:text-slate-300">
-          ← 竞技场
+        <Link to="/arena" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="size-3.5" /> 竞技场
         </Link>
         <h1 className="text-lg font-semibold">{d.name}</h1>
         {d.model && (
-          <span className="rounded bg-panel2 px-1.5 py-0.5 text-xs text-slate-400">
+          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
             {d.model}
           </span>
         )}
         {d.kind === "house" && (
-          <span className="rounded bg-[#7b7ff2]/20 px-1.5 py-0.5 text-xs text-[#aab0ff]">
-            内置
-          </span>
+          <Badge>内置</Badge>
         )}
         <span className={`num text-sm ${signedClass(d.return)}`}>
           {fmtPct(d.return * 100)}
@@ -105,47 +102,49 @@ export default function ArenaAgent() {
       </Card>
 
       {plan && (
-        <Card title={`调仓计划 ${plan.plan_date} → 执行日 ${plan.exec_date ?? "—"}（${plan.status === "executed" ? "已执行" : "待执行"}）`}>
+        <Card title={<span className="inline-flex items-center gap-1.5">调仓计划 {plan.plan_date} <ArrowRight className="size-3.5" /> 执行日 {plan.exec_date ?? "—"}（{plan.status === "executed" ? "已执行" : "待执行"}）</span>}>
           {plan.targets.length === 0 ? (
-            <p className="text-sm text-slate-500">本期无入选标的</p>
+            <EmptyState text="本期无入选标的" className="py-3" />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] text-xs">
-                <thead>
-                  <tr className="border-b border-line text-left text-slate-500">
-                    <th className="py-1.5 pr-2 font-normal">#</th>
-                    <th className="py-1.5 pr-2 font-normal">代码</th>
-                    <th className="py-1.5 pr-2 font-normal">名称</th>
-                    <th className="py-1.5 pr-2 font-normal">指标</th>
-                    <th className="py-1.5 font-normal">理由</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-[480px] text-xs">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>#</TableHead>
+                    <TableHead>代码</TableHead>
+                    <TableHead>名称</TableHead>
+                    <TableHead>指标</TableHead>
+                    <TableHead>理由</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {plan.targets.map((t) => (
-                    <tr key={t.code} className="border-b border-line/40">
-                      <td className="num py-1.5 pr-2">{t.rank}</td>
-                      <td className="num py-1.5 pr-2">
-                        <Link to={`/stock/${t.code}`} className="text-slate-200 hover:underline">{t.code}</Link>
-                      </td>
-                      <td className="py-1.5 pr-2">{t.name}</td>
-                      <td className="num py-1.5 pr-2 text-slate-400">
+                    <TableRow key={t.code} className="hover:bg-muted/50">
+                      <TableCell className="num">{t.rank}</TableCell>
+                      <TableCell className="num">
+                        <Link to={`/stock/${t.code}`} className="text-accent hover:underline">{t.code}</Link>
+                      </TableCell>
+                      <TableCell>{t.name}</TableCell>
+                      <TableCell className="num text-muted-foreground">
                         {Object.entries(t.metrics ?? {})
                           .map(([k, v]) => fmtMetric(k, v)).join(" ")}
-                      </td>
-                      <td className="py-1.5 text-slate-500">{t.note}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{fmtReason(t.note ?? "")}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
           {plan.log.length > 0 && (
             <ul className="mt-3 space-y-1 text-xs">
               {plan.log.map((l, i) => (
-                <li key={i} className={l.error ? "text-down" : "text-slate-400"}>
+                <li key={i} className={l.error ? "text-down" : "text-muted-foreground"}>
                   {l.action === "buy" ? "买入" : l.action === "sell" ? "卖出" : l.action}
                   {l.code ? ` ${l.code}` : ""}{l.shares ? ` ${l.shares}股` : ""}
-                  {l.error ? ` — ${l.error}` : l.ok ? " ✓" : ""}
+                  {l.error ? ` — ${l.error}` : l.ok
+                    ? <Check className="ml-1 inline size-3 text-up" />
+                    : ""}
                 </li>
               ))}
             </ul>
@@ -155,49 +154,49 @@ export default function ArenaAgent() {
 
       <Card title={`持仓（${d.positions.length}）`}>
         {d.positions.length === 0 ? (
-          <div className="text-sm text-slate-500">空仓</div>
+          <EmptyState icon={Inbox} text="空仓" className="py-3" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-slate-500">
-                  <th className="py-2 pr-2 font-normal">代码</th>
-                  <th className="py-2 pr-2 font-normal">名称</th>
-                  <th className="num py-2 pr-2 font-normal">股数</th>
-                  <th className="num py-2 pr-2 font-normal">成本</th>
-                  <th className="num py-2 pr-2 font-normal">现价</th>
-                  <th className="num py-2 pr-2 font-normal">市值</th>
-                  <th className="num py-2 font-normal">盈亏</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="min-w-[480px]">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>代码</TableHead>
+                  <TableHead>名称</TableHead>
+                  <TableHead className="num">股数</TableHead>
+                  <TableHead className="num">成本</TableHead>
+                  <TableHead className="num">现价</TableHead>
+                  <TableHead className="num">市值</TableHead>
+                  <TableHead className="num">盈亏</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {d.positions.map((p) => (
-                  <tr key={p.code} className="border-b border-line/50">
-                    <td className="num py-2 pr-2">
+                  <TableRow key={p.code} className="hover:bg-muted/50">
+                    <TableCell className="num">
                       <Link to={`/stock/${p.code}`}
-                            className="text-slate-200 hover:underline">
+                            className="text-accent hover:underline">
                         {p.code}
                       </Link>
-                    </td>
-                    <td className="py-2 pr-2">{p.name}</td>
-                    <td className="num py-2 pr-2">{fmtNum(p.shares)}</td>
-                    <td className="num py-2 pr-2">{p.avg_cost.toFixed(2)}</td>
-                    <td className="num py-2 pr-2">{p.last_price.toFixed(2)}</td>
-                    <td className="num py-2 pr-2">{fmtNum(p.market_value)}</td>
-                    <td className={`num py-2 ${signedClass(p.pnl)}`}>
+                    </TableCell>
+                    <TableCell>{p.name}</TableCell>
+                    <TableCell className="num">{fmtNum(p.shares)}</TableCell>
+                    <TableCell className="num">{p.avg_cost.toFixed(2)}</TableCell>
+                    <TableCell className="num">{p.last_price.toFixed(2)}</TableCell>
+                    <TableCell className="num">{fmtNum(p.market_value)}</TableCell>
+                    <TableCell className={`num ${signedClass(p.pnl)}`}>
                       {fmtSigned(p.pnl)}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </Card>
 
       <Card title={`交易记录（${d.trades.length}）`}>
         {d.trades.length === 0 ? (
-          <div className="text-sm text-slate-500">暂无交易</div>
+          <EmptyState icon={LineChart} text="暂无交易" className="py-3" />
         ) : (
           <ol className="space-y-3">
             {d.trades.map((t, i) => (
@@ -223,7 +222,7 @@ export default function ArenaAgent() {
                   </span>
                 </div>
                 <blockquote className="mt-1 border-l-2 border-line pl-3 text-xs text-slate-400">
-                  {t.reason?.trim() ? t.reason : "未填写理由"}
+                  {t.reason?.trim() ? fmtReason(t.reason) : "未填写理由"}
                 </blockquote>
               </li>
             ))}

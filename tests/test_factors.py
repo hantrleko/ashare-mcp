@@ -343,7 +343,14 @@ def test_job_queue_limit(monkeypatch):
         return {}
     monkeypatch.setattr(fx, "run_test", slow)
     j = fx.FactorJobs()
-    ids = [j.submit({}) for _ in range(fx.MAX_QUEUED + 1)]
+    first = j.submit({})
+    # wait for the worker to claim the first job so the queue itself holds
+    # exactly MAX_QUEUED items (race: pop happens on the worker thread)
+    for _ in range(100):
+        if j.status(first)["state"] == "running":
+            break
+        time.sleep(0.05)
+    ids = [first] + [j.submit({}) for _ in range(fx.MAX_QUEUED)]
     with pytest.raises(ValueError, match="队列已满"):
         j.submit({})
     gate.set()

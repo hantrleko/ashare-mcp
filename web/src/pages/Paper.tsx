@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { LineSeries } from "lightweight-charts";
 import { api, ApiError, type Order, type PaperStatus, type Position, type Trigger, type EquityPoint, type SchedulerStatus } from "../api";
-import { Card, ErrorBanner, PctText, Spinner } from "../components/ui";
+import { Card, EmptyState, ErrorBanner, PctText, Spinner } from "../components/ui";
 import { useChart } from "../components/chart";
 import { fmtNum, fmtPrice, fmtSigned, signedClass } from "../format";
 import { useToast } from "../components/Toast";
 import { SearchBox } from "../components/SearchBox";
 import { useAccount } from "../account";
 import { NEED_KEY, useCanMutate } from "../auth";
+import { Inbox, LineChart, ListOrdered, Timer } from "lucide-react";
+import { cssVar, onThemeChange } from "../theme";
+import { SERIES } from "../lib/palette";
+import { Button } from "@/components/ui/button";
+import { Input, Label, Select } from "@/components/ui/input";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 export default function Paper() {
   const toast = useToast();
@@ -91,7 +99,7 @@ export default function Paper() {
 
       <Card title="净值曲线">
         {hist.length > 1 ? <EquityChart pts={hist} /> : (
-          <p className="py-4 text-center text-sm text-slate-500">暂无足够历史（每次刷新账户记录当日净值）</p>
+          <EmptyState icon={LineChart} text="暂无足够历史（每次刷新账户记录当日净值）" />
         )}
       </Card>
 
@@ -100,43 +108,43 @@ export default function Paper() {
           <div className="flex flex-col gap-4 md:flex-row">
           <AllocationDonut pos={pos} cash={st?.cash ?? 0} />
           <div className="min-w-0 flex-1 overflow-x-auto">
-            <table className="w-full whitespace-nowrap text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-slate-500">
+            <Table className="whitespace-nowrap">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
                   {["代码", "名称", "持仓", "可卖(T+1)", "今日买入", "成本", "现价", "市值", "盈亏", ""].map((h) => (
-                    <th key={h} className="px-2 py-1.5 font-normal">{h}</th>
+                    <TableHead key={h}>{h}</TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {pos.map((p) => (
-                  <tr key={p.code} className="border-b border-line/40">
-                    <td className="num px-2 py-1.5">{p.code}</td>
-                    <td className="px-2 py-1.5">{p.name}</td>
-                    <td className="num px-2 py-1.5">{p.shares}</td>
-                    <td className="num px-2 py-1.5">{p.available}</td>
-                    <td className="num px-2 py-1.5 text-slate-400">{p.today_bought}</td>
-                    <td className="num px-2 py-1.5">{fmtPrice(p.avg_cost, 3)}</td>
-                    <td className="num px-2 py-1.5">{fmtPrice(p.last_price)}</td>
-                    <td className="num px-2 py-1.5">{fmtNum(p.market_value)}</td>
-                    <td className={`num px-2 py-1.5 ${signedClass(p.pnl)}`}>{fmtSigned(p.pnl)}</td>
-                    <td className="px-2 py-1.5">
-                      <button
+                  <TableRow key={p.code} className="hover:bg-muted/50">
+                    <TableCell className="num">{p.code}</TableCell>
+                    <TableCell>{p.name}</TableCell>
+                    <TableCell className="num">{p.shares}</TableCell>
+                    <TableCell className="num">{p.available}</TableCell>
+                    <TableCell className="num text-muted-foreground">{p.today_bought}</TableCell>
+                    <TableCell className="num">{fmtPrice(p.avg_cost, 3)}</TableCell>
+                    <TableCell className="num">{fmtPrice(p.last_price)}</TableCell>
+                    <TableCell className="num">{fmtNum(p.market_value)}</TableCell>
+                    <TableCell className={`num ${signedClass(p.pnl)}`}>{fmtSigned(p.pnl)}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="destructive" size="sm"
                         onClick={() => doSell(p.code)}
                         disabled={p.available <= 0 || !canMutate}
                         title={canMutate ? "" : NEED_KEY}
-                        className="rounded border border-down/60 px-2 py-0.5 text-xs text-down hover:bg-down/20 disabled:opacity-30"
                       >
                         卖出全部可卖
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
           </div>
-        ) : <p className="py-4 text-center text-sm text-slate-500">暂无持仓（在个股页快捷交易下单）</p>}
+        ) : <EmptyState icon={Inbox} text="暂无持仓（在个股页快捷交易下单）" />}
       </Card>
 
       <TriggerPanel account={account} trigs={trigs} sched={sched}
@@ -145,35 +153,35 @@ export default function Paper() {
       <Card title="订单">
         {orders.length ? (
           <div className="max-h-80 overflow-x-auto">
-            <table className="w-full whitespace-nowrap text-xs">
-              <thead>
-                <tr className="border-b border-line text-left text-slate-500">
+            <Table className="whitespace-nowrap text-xs">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
                   {["时间", "代码", "名称", "方向", "股数", "价格", "金额", "费用", "实现盈亏", "状态"].map((h) => (
-                    <th key={h} className="px-2 py-1.5 font-normal">{h}</th>
+                    <TableHead key={h}>{h}</TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {orders.map((o) => (
-                  <tr key={o.id} className="border-b border-line/40">
-                    <td className="num px-2 py-1.5 text-slate-400">{o.time.replace("T", " ")}</td>
-                    <td className="num px-2 py-1.5">{o.symbol}</td>
-                    <td className="px-2 py-1.5">{o.name}</td>
-                    <td className={`px-2 py-1.5 ${o.side === "buy" ? "text-up" : "text-down"}`}>
+                  <TableRow key={o.id} className="hover:bg-muted/50">
+                    <TableCell className="num text-muted-foreground">{o.time.replace("T", " ")}</TableCell>
+                    <TableCell className="num">{o.symbol}</TableCell>
+                    <TableCell>{o.name}</TableCell>
+                    <TableCell className={o.side === "buy" ? "text-up" : "text-down"}>
                       {o.side === "buy" ? "买入" : "卖出"}
-                    </td>
-                    <td className="num px-2 py-1.5">{o.shares}</td>
-                    <td className="num px-2 py-1.5">{fmtPrice(o.price)}</td>
-                    <td className="num px-2 py-1.5">{fmtNum(o.amount)}</td>
-                    <td className="num px-2 py-1.5">{o.fee.toFixed(2)}</td>
-                    <td className="num px-2 py-1.5">{o.realized_pnl != null ? fmtSigned(o.realized_pnl) : "—"}</td>
-                    <td className="px-2 py-1.5">{o.status}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="num">{o.shares}</TableCell>
+                    <TableCell className="num">{fmtPrice(o.price)}</TableCell>
+                    <TableCell className="num">{fmtNum(o.amount)}</TableCell>
+                    <TableCell className="num">{o.fee.toFixed(2)}</TableCell>
+                    <TableCell className="num">{o.realized_pnl != null ? fmtSigned(o.realized_pnl) : "—"}</TableCell>
+                    <TableCell>{o.status}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
-        ) : <p className="py-4 text-center text-sm text-slate-500">暂无订单</p>}
+        ) : <EmptyState icon={ListOrdered} text="暂无订单" />}
       </Card>
 
       <ResetCard account={account} canMutate={canMutate}
@@ -198,41 +206,36 @@ function AccountHeader({ name, isDefault, canMutate = true, onRenamed, onDeleted
       <span className="text-slate-500">当前账户</span>
       {renaming ? (
         <>
-          <input autoFocus value={val} onChange={(e) => setVal(e.target.value)}
-                 className="w-32 rounded border border-line bg-panel2 px-2 py-1 text-sm outline-none" />
-          <button
+          <Input autoFocus value={val} onChange={(e) => setVal(e.target.value)}
+                 className="w-32" />
+          <Button variant="outline" size="sm"
             onClick={async () => {
               try { await onRenamed(val.trim()); setRenaming(false); }
               catch (e) { onError(e instanceof ApiError ? e.message : String(e)); }
-            }}
-            className="rounded border border-line px-2 py-1 text-xs hover:bg-panel2">保存</button>
-          <button onClick={() => setRenaming(false)}
-                  className="rounded border border-line px-2 py-1 text-xs text-slate-400">取消</button>
+            }}>保存</Button>
+          <Button variant="ghost" size="sm" onClick={() => setRenaming(false)}>取消</Button>
         </>
       ) : (
         <>
-          <span className="font-medium text-slate-100">{name}</span>
-          <button onClick={() => setRenaming(true)} disabled={!canMutate}
-                  title={canMutate ? "" : NEED_KEY}
-                  className="rounded border border-line px-2 py-1 text-xs text-slate-400 hover:bg-panel2 disabled:opacity-40">重命名</button>
+          <span className="font-medium text-foreground">{name}</span>
+          <Button variant="outline" size="sm" onClick={() => setRenaming(true)} disabled={!canMutate}
+                  title={canMutate ? "" : NEED_KEY}>重命名</Button>
           {!isDefault && (
             confirmDel ? (
               <>
                 <span className="text-xs text-up">确认删除？数据不可恢复</span>
-                <button
+                <Button variant="destructive" size="sm"
                   onClick={async () => {
                     try { await onDeleted(); }
                     catch (e) { onError(e instanceof ApiError ? e.message : String(e)); }
                     setConfirmDel(false);
-                  }}
-                  className="rounded bg-red-800 px-2 py-1 text-xs text-white hover:bg-red-700">确认删除</button>
-                <button onClick={() => setConfirmDel(false)}
-                        className="rounded border border-line px-2 py-1 text-xs">取消</button>
+                  }}>确认删除</Button>
+                <Button variant="outline" size="sm" onClick={() => setConfirmDel(false)}>取消</Button>
               </>
             ) : (
-              <button onClick={() => setConfirmDel(true)} disabled={!canMutate}
+              <Button variant="outline" size="sm" onClick={() => setConfirmDel(true)} disabled={!canMutate}
                       title={canMutate ? "" : NEED_KEY}
-                      className="rounded border border-red-800 px-2 py-1 text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-40">删除</button>
+                      className="border-red-800/60 text-red-400 hover:bg-red-950/40 hover:text-red-300">删除</Button>
             )
           )}
         </>
@@ -241,8 +244,7 @@ function AccountHeader({ name, isDefault, canMutate = true, onRenamed, onDeleted
   );
 }
 
-const SLICE_COLORS = ["#7b7ff2", "#f0b90b", "#c084fc", "#38bdf8", "#fb923c",
-                      "#a3e635", "#f472b6", "#94a3b8"];
+const SLICE_COLORS = SERIES;
 
 function AllocationDonut({ pos, cash }: { pos: Position[]; cash: number }) {
   const slices = [
@@ -304,7 +306,7 @@ function EquityChart({ pts }: { pts: EquityPoint[] }) {
   useEffect(() => {
     if (!chart) return;
     const s = chart.addSeries(LineSeries, {
-      color: "#7b7ff2", lineWidth: 2,
+      color: cssVar("--color-accent"), lineWidth: 2,
       priceFormat: { type: "price", precision: 2, minMove: 0.01 },
       // keep a sensible ±0.5% window when equity is flat
       autoscaleInfoProvider: (orig: () => { priceRange: { minValue: number; maxValue: number } } | null) => { // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -318,6 +320,9 @@ function EquityChart({ pts }: { pts: EquityPoint[] }) {
     });
     s.setData(pts.map((p) => ({ time: (p.date || "").slice(0, 10), value: p.equity })));
     chart.timeScale().fitContent();
+    const off = onThemeChange(() =>
+      s.applyOptions({ color: cssVar("--color-accent") }));
+    return () => off();
   }, [chart, pts]);
   return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
 }
@@ -380,7 +385,7 @@ function TriggerPanel({ account, trigs, sched, onChange, toast, canMutate = true
   return (
     <Card
       title="条件单"
-      extra={<button onClick={check} className="rounded border border-line px-2 py-1 text-xs hover:border-slate-500">立即检查</button>}
+      extra={<Button variant="outline" size="sm" onClick={check}>立即检查</Button>}
     >
       <p className="mb-2 text-xs text-slate-500">
         {sched?.enabled
@@ -389,66 +394,63 @@ function TriggerPanel({ account, trigs, sched, onChange, toast, canMutate = true
       </p>
       <div className="mb-3 flex flex-wrap items-end gap-2 text-sm">
         <div className="w-56">
-          <label className="mb-1 block text-xs text-slate-500">代码</label>
+          <Label>代码</Label>
           <SearchBox onPick={(h) => setSym(h.code)} />
         </div>
-        <input value={sym} onChange={(e) => setSym(e.target.value)} placeholder="600519"
-          className="num w-24 rounded border border-line bg-panel2 px-2 py-1.5 outline-none" />
-        <select value={side} onChange={(e) => setSide(e.target.value)}
-          className="rounded border border-line bg-panel2 px-2 py-1.5">
+        <Input value={sym} onChange={(e) => setSym(e.target.value)} placeholder="600519"
+          className="num w-24" />
+        <Select value={side} onChange={(e) => setSide(e.target.value)}>
           <option value="buy">买入</option><option value="sell">卖出</option>
-        </select>
-        <select value={cond} onChange={(e) => setCond(e.target.value)}
-          className="rounded border border-line bg-panel2 px-2 py-1.5">
+        </Select>
+        <Select value={cond} onChange={(e) => setCond(e.target.value)}>
           <option value=">=">价格 ≥ 触发价</option><option value="<=">价格 ≤ 触发价</option>
-        </select>
-        <input type="number" step={0.01} value={price} onChange={(e) => setPrice(Number(e.target.value))}
-          className="num w-24 rounded border border-line bg-panel2 px-2 py-1.5 outline-none" />
-        <input type="number" step={100} min={100} value={shares}
+        </Select>
+        <Input type="number" step={0.01} value={price} onChange={(e) => setPrice(Number(e.target.value))}
+          className="num w-24" />
+        <Input type="number" step={100} min={100} value={shares}
           onChange={(e) => setShares(Number(e.target.value))}
-          className="num w-24 rounded border border-line bg-panel2 px-2 py-1.5 outline-none" />
-        <button onClick={add} disabled={busy || !sym.trim() || !canMutate}
-          title={canMutate ? "" : NEED_KEY}
-          className="rounded bg-slate-700 px-3 py-1.5 hover:bg-slate-600 disabled:opacity-40">
+          className="num w-24" />
+        <Button onClick={add} disabled={busy || !sym.trim() || !canMutate}
+          title={canMutate ? "" : NEED_KEY}>
           添加
-        </button>
+        </Button>
       </div>
       {trigs.length ? (
         <div className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-xs">
-            <thead>
-              <tr className="border-b border-line text-left text-slate-500">
+          <Table className="whitespace-nowrap text-xs">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
                 {["id", "代码", "方向", "条件", "触发价", "股数", "状态", "成交价", "创建时间", ""].map((h) => (
-                  <th key={h} className="px-2 py-1.5 font-normal">{h}</th>
+                  <TableHead key={h}>{h}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {trigs.map((t) => (
-                <tr key={t.id} className="border-b border-line/40">
-                  <td className="num px-2 py-1.5 text-slate-400">{t.id}</td>
-                  <td className="num px-2 py-1.5">{t.symbol}</td>
-                  <td className={`px-2 py-1.5 ${t.side === "buy" ? "text-up" : "text-down"}`}>
+                <TableRow key={t.id} className="hover:bg-muted/50">
+                  <TableCell className="num text-muted-foreground">{t.id}</TableCell>
+                  <TableCell className="num">{t.symbol}</TableCell>
+                  <TableCell className={t.side === "buy" ? "text-up" : "text-down"}>
                     {t.side === "buy" ? "买入" : "卖出"}
-                  </td>
-                  <td className="px-2 py-1.5">{t.condition}</td>
-                  <td className="num px-2 py-1.5">{fmtPrice(t.trigger_price)}</td>
-                  <td className="num px-2 py-1.5">{t.shares}</td>
-                  <td className="px-2 py-1.5">{badge(t.status)}{t.error ? <span className="ml-1 text-red-400">{t.error}</span> : null}</td>
-                  <td className="num px-2 py-1.5">{t.filled_price != null ? fmtPrice(t.filled_price) : "—"}</td>
-                  <td className="num px-2 py-1.5 text-slate-400">{t.created_at.replace("T", " ")}</td>
-                  <td className="px-2 py-1.5">
+                  </TableCell>
+                  <TableCell>{t.condition}</TableCell>
+                  <TableCell className="num">{fmtPrice(t.trigger_price)}</TableCell>
+                  <TableCell className="num">{t.shares}</TableCell>
+                  <TableCell>{badge(t.status)}{t.error ? <span className="ml-1 text-red-400">{t.error}</span> : null}</TableCell>
+                  <TableCell className="num">{t.filled_price != null ? fmtPrice(t.filled_price) : "—"}</TableCell>
+                  <TableCell className="num text-muted-foreground">{t.created_at.replace("T", " ")}</TableCell>
+                  <TableCell>
                     {t.status === "pending" && (
-                      <button onClick={() => cancel(t.id)}
-                        className="rounded border border-line px-1.5 py-0.5 text-slate-400 hover:text-red-400">取消</button>
+                      <Button variant="ghost" size="sm" onClick={() => cancel(t.id)}
+                        className="h-6 px-1.5 text-muted-foreground hover:text-red-400">取消</Button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      ) : <p className="py-3 text-sm text-slate-500">暂无条件单</p>}
+      ) : <EmptyState icon={Timer} text="暂无条件单" className="py-3" />}
     </Card>
   );
 }
@@ -466,21 +468,21 @@ function ResetCard({ account, canMutate = true, onDone }: {
   return (
     <Card title="重置账户">
       {!open ? (
-        <button onClick={() => setOpen(true)} disabled={!canMutate}
+        <Button variant="outline" onClick={() => setOpen(true)} disabled={!canMutate}
           title={canMutate ? "" : NEED_KEY}
-          className="rounded border border-red-800 px-3 py-1.5 text-sm text-red-400 hover:bg-red-950/40 disabled:opacity-40">
+          className="border-red-800/60 text-red-400 hover:bg-red-950/40 hover:text-red-300">
           重置账户（清空持仓与订单）
-        </button>
+        </Button>
       ) : (
         <div className="flex items-end gap-3">
           <div>
-            <label className="mb-1 block text-xs text-slate-500">初始资金</label>
-            <input type="number" step={100000} min={10000} value={cap}
+            <Label>初始资金</Label>
+            <Input type="number" step={100000} min={10000} value={cap}
               onChange={(e) => setCap(Number(e.target.value))}
-              className="num rounded border border-line bg-panel2 px-2 py-1.5 outline-none" />
+              className="num" />
           </div>
-          <button onClick={reset} className="rounded bg-red-800 px-3 py-1.5 text-sm text-white hover:bg-red-700">确认重置</button>
-          <button onClick={() => setOpen(false)} className="rounded border border-line px-3 py-1.5 text-sm">取消</button>
+          <Button variant="destructive" onClick={reset}>确认重置</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
         </div>
       )}
     </Card>

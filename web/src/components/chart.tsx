@@ -2,18 +2,18 @@
  * lazy vendor_charts chunk and is not loaded by the Home page. */
 import { useEffect, useRef, useState } from "react";
 import { createChart, type IChartApi, type DeepPartial, type ChartOptions } from "lightweight-charts";
-import { cssVar, onThemeChange } from "../theme";
+import { cssVar, onThemeChange, withAlpha } from "../theme";
 
 function chartTheme(): DeepPartial<ChartOptions> {
   return {
     layout: {
       background: { color: "transparent" },
       textColor: cssVar("--color-chart-text"),
-      fontFamily: "Segoe UI, Microsoft YaHei, sans-serif",
+      fontFamily: '"Inter Variable", "Segoe UI", "Microsoft YaHei", sans-serif',
     },
     grid: {
-      vertLines: { color: "color-mix(in srgb, var(--color-line) 55%, transparent)" },
-      horzLines: { color: "color-mix(in srgb, var(--color-line) 55%, transparent)" },
+      vertLines: { color: withAlpha(cssVar("--color-line"), 0.55) },
+      horzLines: { color: withAlpha(cssVar("--color-line"), 0.55) },
     },
     rightPriceScale: { borderColor: cssVar("--color-line") },
     timeScale: { borderColor: cssVar("--color-line"), timeVisible: false },

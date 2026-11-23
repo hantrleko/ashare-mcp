@@ -6,12 +6,18 @@ import {
   api, type FactorInfo, type FactorJobIn, type FactorJobState,
   type FactorResult,
 } from "../api";
-import { Card, ErrorBanner, Spinner } from "../components/ui";
+import { Card, EmptyState, ErrorBanner, Spinner } from "../components/ui";
 import { useChart } from "../components/chart";
 import { Field, M, inp, toDay } from "../components/bt_shared";
 import { DOWN, UP, fmtPct, signedClass } from "../format";
+import { FlaskConical, Minus, Plus } from "lucide-react";
+import { cssVar } from "../theme";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/input";
 
-const PALETTE = ["#8b93a7", "#5b8def", "#7b7ff2", "#c084fc", "#f472b6",
+/** Ordered quantile scale — Q1..Qq colours plus an accent slot for the
+ *  old purple series (now read from the theme). */
+const PALETTE = ["#8b93a7", "#5b8def", "__accent__", "#c084fc", "#f472b6",
   "#fb923c", "#facc15", "#4ade80", "#38bdf8", "#f87171"];
 
 function defStart(): string {
@@ -101,16 +107,15 @@ export default function Factor() {
             </Field>
           ) : (
             <div className="col-span-2 sm:col-span-3">
-              <label className="mb-1 block text-xs text-slate-500">
-                复合因子（点击 +/− 加入）</label>
+              <Label>复合因子（点击 +/− 加入）</Label>
               <div className="flex flex-wrap gap-1.5">
                 {factors.map((f) => (
-                  <span key={f.id} className="inline-flex items-center gap-0.5 rounded border border-line px-1.5 py-0.5 text-xs">
+                  <span key={f.id} className="inline-flex items-center gap-0.5 rounded-md border border-border px-1.5 py-0.5 text-xs">
                     {f.name}
-                    <button className="px-1 text-up hover:font-bold" title="正向"
-                      onClick={() => setComp([...comp, { factor: f.id, sign: 1 }])}>+</button>
-                    <button className="px-1 text-down hover:font-bold" title="负向"
-                      onClick={() => setComp([...comp, { factor: f.id, sign: -1 }])}>−</button>
+                    <button className="cursor-pointer p-0.5 text-up hover:bg-up/15 rounded" title="正向" aria-label={`正向加入 ${f.name}`}
+                      onClick={() => setComp([...comp, { factor: f.id, sign: 1 }])}><Plus className="size-3" /></button>
+                    <button className="cursor-pointer p-0.5 text-down hover:bg-down/15 rounded" title="负向" aria-label={`负向加入 ${f.name}`}
+                      onClick={() => setComp([...comp, { factor: f.id, sign: -1 }])}><Minus className="size-3" /></button>
                   </span>
                 ))}
               </div>
@@ -174,11 +179,11 @@ export default function Factor() {
           </Field>
         </div>
         <div className="mt-3 flex items-center gap-3">
-          <button onClick={submit} disabled={!!running || !validCustom
+          <Button onClick={submit} disabled={!!running || !validCustom
             || (mode === "composite" && comp.length === 0)}
-            className="rounded bg-up/90 px-4 py-1.5 text-sm font-medium text-white hover:bg-up disabled:opacity-40">
+            className="px-4">
             {running ? "运行中…" : "开始检验"}
-          </button>
+          </Button>
           {running && (
             <div className="flex-1">
               <div className="mb-1 flex justify-between text-xs text-slate-500">
@@ -188,8 +193,8 @@ export default function Factor() {
                       factor: "计算因子", test: "截面检验" }[job!.progress.stage]
                     ?? job!.progress.stage}</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded bg-panel2">
-                <div className="h-full bg-up transition-all"
+              <div className="h-1.5 overflow-hidden rounded bg-muted">
+                <div className="h-full bg-accent transition-all"
                   style={{ width: job!.progress.total
                     ? `${(job!.progress.loaded / job!.progress.total) * 100}%`
                     : "5%" }} />
@@ -205,10 +210,10 @@ export default function Factor() {
       </Card>
       <ErrorBanner error={err} />
       {!res && !running && !job && (
-        <Card><div className="py-6 text-center text-sm text-slate-500">
-          选择因子与股票池后开始检验。K线首次加载较慢（每只股票约 1 秒），
-          同一股票池的后续检验会走缓存。
-        </div></Card>
+        <Card>
+          <EmptyState icon={FlaskConical}
+            text="选择因子与股票池后开始检验。K线首次加载较慢（每只股票约 1 秒），同一股票池的后续检验会走缓存。" />
+        </Card>
       )}
       {running && !res && <Spinner label="计算中（后台任务）" />}
       {res && <Results res={res} />}
@@ -269,10 +274,10 @@ function Results({ res }: { res: FactorResult }) {
         <div className="rounded border border-yellow-800/60 bg-yellow-950/30 px-3 py-2 text-xs leading-6 text-yellow-200/90">
           {res.notes.map((n, i) => <div key={i}>· {n}</div>)}
         </div>
-        <button onClick={() => exportIcCsv(res)}
-          className="mt-3 rounded border border-line px-3 py-1 text-xs text-slate-300 hover:bg-panel2">
+        <Button variant="outline" size="sm" onClick={() => exportIcCsv(res)}
+          className="mt-3">
           导出 IC 序列 CSV
-        </button>
+        </Button>
       </Card>
     </>
   );
@@ -313,7 +318,8 @@ function NavChart({ res }: { res: FactorResult }) {
     Object.entries(res.quantile_nav).forEach(([k, pts], i) => {
       const isLS = k === "LS";
       const s = chart.addSeries(LineSeries, {
-        color: isLS ? "#f8fafc" : PALETTE[i % PALETTE.length],
+        color: isLS ? "#f8fafc" : PALETTE[i % PALETTE.length] === "__accent__"
+          ? cssVar("--color-accent") : PALETTE[i % PALETTE.length],
         lineWidth: isLS ? 2 : 1,
         lineStyle: isLS ? 2 : 0,
         title: k,

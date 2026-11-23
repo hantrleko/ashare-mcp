@@ -7,12 +7,20 @@ import {
 } from "lightweight-charts";
 import { api, type Bar, type Order, type Quote } from "../api";
 import { boll, macd, rsi, sma, toPts } from "../indicators";
-import { Card, ErrorBanner, PctText, Skeleton, Spinner } from "../components/ui";
+import { Card, EmptyState, ErrorBanner, PctText, Skeleton, Spinner } from "../components/ui";
 import { useChart } from "../components/chart";
 import { DOWN, UP, fmtAmount, fmtPct, fmtPrice, fmtSigned, todayYmd } from "../format";
 import { useToast } from "../components/Toast";
 import { useAccount } from "../account";
 import { NEED_KEY, useCanMutate } from "../auth";
+import { ArrowDown, ArrowUp, Minus, Plus, Star } from "lucide-react";
+import { cssVar, onThemeChange, withAlpha } from "../theme";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Seg } from "@/components/ui/tabs";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 type RangeKey = "1y" | "3y" | "5y" | "all";
 type Indicator = "none" | "macd" | "rsi";
@@ -118,7 +126,7 @@ export default function Stock() {
             </span>
           </div>
         </div>
-        <div className="grid flex-1 grid-cols-3 gap-x-4 gap-y-1 text-xs sm:grid-cols-6 sm:text-sm">
+        <div className="grid min-w-0 basis-full grid-cols-3 gap-x-4 gap-y-1 text-xs sm:basis-0 sm:flex-1 sm:grid-cols-6 sm:text-sm">
           <Hd label="今开" v={fmtPrice(quote?.open)} />
           <Hd label="最高" v={fmtPrice(quote?.high)} cls="text-up" />
           <Hd label="最低" v={fmtPrice(quote?.low)} cls="text-down" />
@@ -184,16 +192,11 @@ export default function Stock() {
 
           {/* tabs */}
           <Card>
-            <div className="mb-3 flex gap-1 border-b border-line text-sm">
-              {[["flow", "资金流向"], ["fin", "财务指标"], ["stmt", "三大报表"], ["peers", "同业对比"], ["factor", "因子快照"], ["ann", "公告"]].map(([k, l]) => (
-                <button
-                  key={k}
-                  onClick={() => setTab(k)}
-                  className={`px-3 py-2 ${tab === k ? "border-b-2 border-up text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-                >
-                  {l}
-                </button>
-              ))}
+            <div className="mb-3 overflow-x-auto">
+              <Seg
+                options={[["flow", "资金流向"], ["fin", "财务指标"], ["stmt", "三大报表"], ["peers", "同业对比"], ["factor", "因子快照"], ["ann", "公告"]]}
+                value={tab} onChange={setTab} btnClassName="px-3 py-1.5 text-sm"
+              />
             </div>
             {tab === "flow" && <FlowTab code={code} />}
             {tab === "fin" && <FinTab code={code} />}
@@ -220,24 +223,6 @@ function Hd({ label, v, cls = "" }: { label: string; v: string; cls?: string }) 
   );
 }
 
-function Seg({ options, value, onChange }: {
-  options: [string, string][]; value: string; onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex overflow-hidden rounded border border-line">
-      {options.map(([v, l]) => (
-        <button
-          key={v}
-          onClick={() => onChange(v)}
-          className={`px-2 py-1 ${v === value ? "bg-panel2 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}
-        >
-          {l}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /* ---------- main K chart ---------- */
 
 function KChart({ bars, ind, boll: showBoll, onHover, cost, orders }: {
@@ -251,6 +236,7 @@ function KChart({ bars, ind, boll: showBoll, onHover, cost, orders }: {
 
   useEffect(() => {
     if (!chart) return;
+    let offAccent: (() => void) | undefined;
     const up = UP, down = DOWN;
     const candle = chart.addSeries(CandlestickSeries, {
       upColor: up, downColor: down, borderUpColor: up, borderDownColor: down,
@@ -311,8 +297,10 @@ function KChart({ bars, ind, boll: showBoll, onHover, cost, orders }: {
       const m = macd(bars);
       const dif = chart.addSeries(LineSeries, { color: "#f0b90b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, 1);
       dif.setData(toPts(bars, m.dif));
-      const dea = chart.addSeries(LineSeries, { color: "#7b7ff2", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, 1);
+      const dea = chart.addSeries(LineSeries, { color: cssVar("--color-accent"), lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, 1);
       dea.setData(toPts(bars, m.dea));
+      offAccent = onThemeChange(() =>
+        dea.applyOptions({ color: cssVar("--color-accent") }));
       const hist = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, 1);
       hist.setData(bars.flatMap((b, i) =>
         m.hist[i] == null ? [] : [{
@@ -329,7 +317,7 @@ function KChart({ bars, ind, boll: showBoll, onHover, cost, orders }: {
     };
     chart.subscribeCrosshairMove(onMove);
     chart.timeScale().fitContent();
-    return () => chart.unsubscribeCrosshairMove(onMove);
+    return () => { offAccent?.(); chart.unsubscribeCrosshairMove(onMove); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chart, bars, ind, showBoll, cost, orders]);
 
@@ -391,13 +379,21 @@ function QuickTrade({ code, quote, toast, onTraded }: {
         <div>
           <label className="mb-1 block text-slate-400">股数（100的倍数）</label>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShares(Math.max(100, shares - 100))} className="rounded border border-line px-2 py-1">−</button>
-            <input
+            <Button variant="outline" size="icon" className="size-7 shrink-0"
+              aria-label="减少100股"
+              onClick={() => setShares(Math.max(100, shares - 100))}>
+              <Minus className="size-3.5" />
+            </Button>
+            <Input
               type="number" step={100} min={100} value={shares}
               onChange={(e) => setShares(Math.max(0, Math.floor(Number(e.target.value) / 100) * 100))}
-              className="num w-full rounded border border-line bg-panel2 px-2 py-1 text-right outline-none"
+              className="num w-full text-right"
             />
-            <button onClick={() => setShares(shares + 100)} className="rounded border border-line px-2 py-1">＋</button>
+            <Button variant="outline" size="icon" className="size-7 shrink-0"
+              aria-label="增加100股"
+              onClick={() => setShares(shares + 100)}>
+              <Plus className="size-3.5" />
+            </Button>
           </div>
         </div>
         <div className="space-y-1 border-t border-line pt-2 text-xs text-slate-400">
@@ -408,22 +404,22 @@ function QuickTrade({ code, quote, toast, onTraded }: {
           <div className="flex justify-between"><span>可用现金</span><span className="num">{cash != null ? fmtAmount(cash) : "—"}</span></div>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <button
+          <Button variant="buy"
             disabled={busy || shares <= 0 || !canMutate}
             title={canMutate ? "" : NEED_KEY}
             onClick={() => trade("buy")}
-            className="rounded bg-up/90 py-2 font-medium text-white hover:bg-up disabled:opacity-40"
+            className="h-9"
           >
             买入
-          </button>
-          <button
+          </Button>
+          <Button variant="sell"
             disabled={busy || shares <= 0 || !canMutate}
             title={canMutate ? "" : NEED_KEY}
             onClick={() => trade("sell")}
-            className="rounded bg-down/90 py-2 font-medium text-white hover:bg-down disabled:opacity-40"
+            className="h-9"
           >
             卖出
-          </button>
+          </Button>
         </div>
         <p className="text-xs text-slate-500">模拟盘 · 1手=100股 · T+1 · 涨跌停校验</p>
       </div>
@@ -455,23 +451,23 @@ function useLoader<T>(fn: () => Promise<{ data: T; source?: string }>, deps: unk
 
 function GenericTable({ rows }: { rows: Record<string, unknown>[] }) {
   const cols = useMemo(() => (rows.length ? Object.keys(rows[0]) : []), [rows]);
-  if (!rows.length) return <p className="py-4 text-center text-sm text-slate-500">暂无数据</p>;
+  if (!rows.length) return <EmptyState text="暂无数据" />;
   return (
     <div className="max-h-96 overflow-auto">
-      <table className="w-full whitespace-nowrap text-xs">
-        <thead className="sticky top-0 bg-panel">
-          <tr className="border-b border-line text-left text-slate-500">
-            {cols.map((c) => <th key={c} className="px-2 py-1.5 font-normal">{c}</th>)}
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="whitespace-nowrap text-xs">
+        <TableHeader className="sticky top-0 bg-card">
+          <TableRow className="hover:bg-transparent">
+            {cols.map((c) => <TableHead key={c}>{c}</TableHead>)}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r, i) => (
-            <tr key={i} className="border-b border-line/40 hover:bg-panel2">
-              {cols.map((c) => <td key={c} className="num px-2 py-1.5">{cell(r[c])}</td>)}
-            </tr>
+            <TableRow key={i} className="hover:bg-muted/50">
+              {cols.map((c) => <TableCell key={c} className="num">{cell(r[c])}</TableCell>)}
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -575,7 +571,8 @@ function FinChart({ rows }: { rows: Record<string, unknown>[] }) {
         return v == null ? [] : [{ time: x.t, value: v * scale }];
       }));
     };
-    mk(revK, "rgba(123,127,242,0.75)", rs);      // 营业总收入 (亿)
+    const acc = cssVar("--color-accent");
+    mk(revK, withAlpha(acc, 0.75), rs);         // 营业总收入 (亿)
     mk(npK, "rgba(240,185,11,0.85)", rs);        // 归母净利润 (亿)
     chart.applyOptions({ leftPriceScale: { visible: true, borderColor: "rgba(148,163,184,0.4)" } });
     const ln = (k: string | undefined, color: string) => {
@@ -586,18 +583,18 @@ function FinChart({ rows }: { rows: Record<string, unknown>[] }) {
         return v == null ? [] : [{ time: x.t, value: v }];
       }));
     };
-    ln(roeK, "#ef5350");                          // ROE %
-    ln(gmK, "#26a69a");                           // 毛利率 %
+    ln(roeK, "#f472b6");                          // ROE %
+    ln(gmK, "#06b6d4");                           // 毛利率 %
     chart.timeScale().fitContent();
   }, [chart, rows]);
   if (!rows.length) return null;
   return (
     <div className="mb-3">
       <div className="mb-1 flex flex-wrap gap-3 text-xs text-slate-500">
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "rgba(123,127,242,0.75)" }} />营业总收入(亿)</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "var(--color-accent)" }} />营业总收入(亿)</span>
         <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "rgba(240,185,11,0.85)" }} />归母净利润(亿)</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "#ef5350" }} />ROE%(右轴)</span>
-        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "#26a69a" }} />毛利率%(右轴)</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "#f472b6" }} />ROE%(右轴)</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ background: "#06b6d4" }} />毛利率%(右轴)</span>
       </div>
       <div ref={ref} className="w-full min-w-0 overflow-hidden" />
     </div>
@@ -660,9 +657,9 @@ function AnnTab({ code }: { code: string }) {
     <div>
       <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
         日期(YYYYMMDD，留空=今天)
-        <input
+        <Input
           value={day} onChange={(e) => setDay(e.target.value)} placeholder={todayYmd()}
-          className="num w-32 rounded border border-line bg-panel2 px-2 py-1 outline-none"
+          className="num w-32"
         />
       </div>
       {loading ? <Spinner /> : (
@@ -729,13 +726,13 @@ function PeersTab({ code }: { code: string }) {
           const p = data.stock.percentiles?.[k];
           const med = data.medians?.[k];
           return (
-            <div key={k} className="rounded border border-line bg-panel2 px-2 py-2">
+            <div key={k} className="rounded-lg border border-border bg-muted/50 px-2 py-2">
               <div className="flex items-baseline justify-between text-xs">
-                <span className="text-slate-500">{l}</span>
+                <span className="text-muted-foreground">{l}</span>
                 <span className="num">{p == null ? "—" : `${p.toFixed(0)}%`}</span>
               </div>
-              <div className="mt-1 h-1.5 rounded bg-line/60">
-                <div className="h-1.5 rounded bg-[#7b7ff2]" style={{ width: `${p ?? 0}%` }} />
+              <div className="mt-1 h-1.5 rounded bg-border/60">
+                <div className="h-1.5 rounded bg-accent" style={{ width: `${p ?? 0}%` }} />
               </div>
               <div className="mt-1 text-[10px] text-slate-500">
                 行业中位 {fmtM(k, med)}
@@ -745,38 +742,53 @@ function PeersTab({ code }: { code: string }) {
         })}
       </div>
       <div className="max-h-96 overflow-auto">
-        <table className="w-full whitespace-nowrap text-xs">
-          <thead className="sticky top-0 bg-panel">
-            <tr className="border-b border-line text-left text-slate-500">
-              <th className="cursor-pointer px-2 py-1.5 font-normal" onClick={() => click("code")}>代码</th>
-              <th className="px-2 py-1.5 font-normal">名称</th>
-              <th className="px-2 py-1.5 text-right font-normal">现价</th>
-              <th className="px-2 py-1.5 text-right font-normal">涨跌%</th>
+        <Table className="whitespace-nowrap text-xs">
+          <TableHeader className="sticky top-0 bg-card">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => click("code")}>
+                <span className="inline-flex items-center gap-0.5">代码
+                  {sort === "code" && (asc
+                    ? <ArrowUp className="size-3 text-accent" />
+                    : <ArrowDown className="size-3 text-accent" />)}
+                </span>
+              </TableHead>
+              <TableHead>名称</TableHead>
+              <TableHead className="text-right">现价</TableHead>
+              <TableHead className="text-right">涨跌%</TableHead>
               {PEER_METRICS.map(([k, l]) => (
-                <th key={k} onClick={() => click(k)} className="cursor-pointer px-2 py-1.5 text-right font-normal hover:text-slate-200">
-                  {l}{sort === k ? (asc ? "↑" : "↓") : ""}
-                </th>
+                <TableHead key={k} onClick={() => click(k)}
+                  className="cursor-pointer select-none text-right hover:text-foreground">
+                  <span className="inline-flex items-center gap-0.5">
+                    {l}
+                    {sort === k && (asc
+                      ? <ArrowUp className="size-3 text-accent" />
+                      : <ArrowDown className="size-3 text-accent" />)}
+                  </span>
+                </TableHead>
               ))}
-              <th className="px-2 py-1.5 text-right font-normal">换手%</th>
-            </tr>
-          </thead>
-          <tbody>
+              <TableHead className="text-right">换手%</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((r) => (
-              <tr key={r.code} className={`border-b border-line/40 hover:bg-panel2 ${r.is_me ? "bg-[#7b7ff2]/10" : ""}`}>
-                <td className="num px-2 py-1.5">
-                  <a href={`#/stock/${r.code}`} className="text-[#7b7ff2] hover:underline">{r.code}</a>
-                </td>
-                <td className="px-2 py-1.5">{r.name}{r.is_me ? " ★" : ""}</td>
-                <td className="num px-2 py-1.5 text-right">{fmtPrice(r.price)}</td>
-                <td className={`num px-2 py-1.5 text-right ${(r.pct_chg ?? 0) > 0 ? "text-up" : (r.pct_chg ?? 0) < 0 ? "text-down" : ""}`}>{r.pct_chg == null ? "—" : fmtPct(r.pct_chg)}</td>
+              <TableRow key={r.code} className={`hover:bg-muted/50 ${r.is_me ? "bg-accent/10" : ""}`}>
+                <TableCell className="num">
+                  <a href={`#/stock/${r.code}`} className="text-accent hover:underline">{r.code}</a>
+                </TableCell>
+                <TableCell>
+                  {r.name}
+                  {r.is_me && <Star className="ml-1 inline size-3 fill-accent text-accent" />}
+                </TableCell>
+                <TableCell className="num text-right">{fmtPrice(r.price)}</TableCell>
+                <TableCell className={`num text-right ${(r.pct_chg ?? 0) > 0 ? "text-up" : (r.pct_chg ?? 0) < 0 ? "text-down" : ""}`}>{r.pct_chg == null ? "—" : fmtPct(r.pct_chg)}</TableCell>
                 {PEER_METRICS.map(([k]) => (
-                  <td key={k} className="num px-2 py-1.5 text-right">{fmtM(k, r[k])}</td>
+                  <TableCell key={k} className="num text-right">{fmtM(k, r[k])}</TableCell>
                 ))}
-                <td className="num px-2 py-1.5 text-right">{r.turnover == null ? "—" : r.turnover.toFixed(2)}</td>
-              </tr>
+                <TableCell className="num text-right">{r.turnover == null ? "—" : r.turnover.toFixed(2)}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

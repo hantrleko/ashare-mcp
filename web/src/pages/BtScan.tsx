@@ -5,6 +5,12 @@ import { Card, ErrorBanner } from "../components/ui";
 import { SearchBox } from "../components/SearchBox";
 import { Field, inp } from "../components/bt_shared";
 import { DOWN, UP, ddClass, fmtDD, fmtPct, signedClass, todayYmd } from "../format";
+import { ArrowDown, ArrowUp, Star } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input, Label } from "@/components/ui/input";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 const SCAN_PARAMS: Record<string, [string, string, number, number, number][]> = {
   // key, label, default start, default stop, default step
@@ -68,8 +74,8 @@ export default function BtScan() {
       <Card title="扫描参数">
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <div>
-            <label className="mb-1 block text-xs text-slate-500">代码</label>
-            <input value={symbol} onChange={(e) => setSymbol(e.target.value)} className={inp} />
+            <Label>代码</Label>
+            <Input value={symbol} onChange={(e) => setSymbol(e.target.value)} className={inp} />
             <SearchBox className="mt-1" onPick={(h) => setSymbol(h.code)} />
           </div>
           <Field label="策略">
@@ -113,10 +119,10 @@ export default function BtScan() {
           ))}
         </div>
         <div className="mt-3 flex items-center gap-3">
-          <button onClick={run} disabled={busy || combos > 100 || combos === 0}
-            className="rounded bg-up/90 px-6 py-1.5 text-sm font-medium text-white hover:bg-up disabled:opacity-40">
+          <Button onClick={run} disabled={busy || combos > 100 || combos === 0}
+            className="px-6">
             {busy ? "扫描中…" : "运行扫描"}
-          </button>
+          </Button>
           <span className={`text-xs ${combos > 100 ? "text-down" : "text-slate-500"}`}>
             {combos} 组参数{combos > 100 && "（超过 100 上限，请缩小范围）"}
           </span>
@@ -179,47 +185,52 @@ function ScanOut({ res, metric, sortKey, setSortKey }: {
 
       <Card title={`全部组合（${res.num_combos}）`}>
         <div className="max-h-96 overflow-auto">
-          <table className="w-full whitespace-nowrap text-xs">
-            <thead>
-              <tr className="border-b border-line text-left text-slate-500">
-                <th className="px-2 py-1.5 font-normal">参数</th>
+          <Table className="whitespace-nowrap text-xs">
+            <TableHeader className="sticky top-0 bg-card">
+              <TableRow className="hover:bg-transparent">
+                <TableHead>参数</TableHead>
                 {[["is", "样本内"], ["oos", "样本外"]].map(([k, l]) => (
-                  <th key={k} className="cursor-pointer px-2 py-1.5 font-normal hover:text-slate-200"
+                  <TableHead key={k} className="cursor-pointer select-none hover:text-foreground"
                     onClick={() => setSortKey(sortKey === k ? `!${k}` : k)}>
-                    {l} {sortKey.replace("!", "") === k ? (sortKey.startsWith("!") ? "↑" : "↓") : ""}
-                  </th>
+                    <span className="inline-flex items-center gap-0.5">
+                      {l}
+                      {sortKey.replace("!", "") === k && (sortKey.startsWith("!")
+                        ? <ArrowUp className="size-3 text-accent" />
+                        : <ArrowDown className="size-3 text-accent" />)}
+                    </span>
+                  </TableHead>
                 ))}
                 {["total_return", "annual_return", "sharpe", "max_drawdown", "num_trades"]
                   .filter((m) => m !== metric).slice(0, 3)
-                  .map((m) => <th key={m} className="px-2 py-1.5 font-normal">IS·{m === "total_return" ? "总收益" : m === "annual_return" ? "年化" : m === "sharpe" ? "Sharpe" : m === "max_drawdown" ? "回撤" : "笔数"}</th>)}
-              </tr>
-            </thead>
-            <tbody>
+                  .map((m) => <TableHead key={m}>IS·{m === "total_return" ? "总收益" : m === "annual_return" ? "年化" : m === "sharpe" ? "Sharpe" : m === "max_drawdown" ? "回撤" : "笔数"}</TableHead>)}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sorted.map((r, i) => {
                 const isBest = JSON.stringify(r.params) === bestKey;
                 return (
-                  <tr key={i} className={`border-b border-line/40 ${isBest ? "bg-accent/10" : ""}`}>
-                    <td className="num px-2 py-1.5">
+                  <TableRow key={i} className={`hover:bg-muted/50 ${isBest ? "bg-accent/10" : ""}`}>
+                    <TableCell className="num">
                       {Object.entries(r.params).map(([k, v]) => `${k}=${v}`).join(" ")}
-                      {isBest && <span className="ml-1 text-accent">★</span>}
-                    </td>
-                    <td className={`num px-2 py-1.5 ${clsM(metric as keyof ScanMetrics, r.is[metric as keyof ScanMetrics])}`}>
+                      {isBest && <Star className="ml-1 inline size-3 fill-accent text-accent" />}
+                    </TableCell>
+                    <TableCell className={`num ${clsM(metric as keyof ScanMetrics, r.is[metric as keyof ScanMetrics])}`}>
                       {fmtM(metric as keyof ScanMetrics, r.is[metric as keyof ScanMetrics])}
-                    </td>
-                    <td className={`num px-2 py-1.5 ${clsM(metric as keyof ScanMetrics, r.oos[metric as keyof ScanMetrics])}`}>
+                    </TableCell>
+                    <TableCell className={`num ${clsM(metric as keyof ScanMetrics, r.oos[metric as keyof ScanMetrics])}`}>
                       {fmtM(metric as keyof ScanMetrics, r.oos[metric as keyof ScanMetrics])}
-                    </td>
+                    </TableCell>
                     {["total_return", "annual_return", "sharpe", "max_drawdown", "num_trades"]
                       .filter((m) => m !== metric).slice(0, 3)
                       .map((m) => (
-                        <td key={m} className={`num px-2 py-1.5 ${clsM(m as keyof ScanMetrics, r.is[m as keyof ScanMetrics])}`}>
+                        <TableCell key={m} className={`num ${clsM(m as keyof ScanMetrics, r.is[m as keyof ScanMetrics])}`}>
                           {fmtM(m as keyof ScanMetrics, r.is[m as keyof ScanMetrics])}
-                        </td>))}
-                  </tr>
+                        </TableCell>))}
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </Card>
       <p className="text-xs text-slate-500">{res.notes.join(" · ")}</p>

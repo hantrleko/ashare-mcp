@@ -512,7 +512,16 @@ def _norm_index_symbol(symbol: str) -> str:
 
 def get_index_quote(symbol: str = "sh000001") -> dict[str, Any]:
     idx = _norm_index_symbol(symbol)
-    return _quote_from_spot(_index_spot_df(), idx[2:], prefixed=idx)
+    try:
+        return _quote_from_spot(_index_spot_df(), idx[2:], prefixed=idx)
+    except KeyError:
+        # sina index snapshot covers sh/sz only — e.g. bj899050 (北证50)
+        # is absent; tencent quotes carry it. amount units match (yuan).
+        from . import tencent
+        tdf = tencent.fetch_quotes([idx])
+        # tencent frames use ``code`` for the 6-digit code, not ``code6``
+        return _quote_from_spot(
+            tdf.rename(columns={"code": "code6"}), idx[2:])
 
 
 _INDEX_BOARD = [

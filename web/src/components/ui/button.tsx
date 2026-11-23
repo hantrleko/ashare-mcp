@@ -12,6 +12,9 @@ const buttonVariants = cva(
         outline: "border border-border bg-transparent text-foreground hover:bg-muted",
         ghost: "text-muted-foreground hover:bg-muted hover:text-foreground",
         danger: "bg-up/90 text-white hover:bg-up",
+        destructive: "bg-red-800 text-white hover:bg-red-700",
+        buy: "bg-up/90 text-white hover:bg-up",
+        sell: "bg-down/90 text-white hover:bg-down",
       },
       size: {
         default: "h-8 px-3 py-1.5",

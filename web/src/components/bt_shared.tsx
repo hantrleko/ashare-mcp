@@ -3,14 +3,16 @@ import { useEffect } from "react";
 import { AreaSeries } from "lightweight-charts";
 import { useChart } from "./chart";
 import { DOWN, UP } from "../format";
+import { cn } from "@/lib/utils";
+import { inputCls, Label } from "./ui/input";
 import type { EquityPoint } from "../api";
 
-export const inp = "num w-full rounded border border-line bg-panel2 px-2 py-1.5 text-sm outline-none";
+export const inp = cn(inputCls, "num w-full");
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-xs text-slate-500">{label}</label>
+      <Label>{label}</Label>
       {children}
     </div>
   );
