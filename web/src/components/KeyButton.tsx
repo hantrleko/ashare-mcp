@@ -1,6 +1,7 @@
 /** Header 🔑 button — paste an API key (localStorage `ashare.key`),
  * shows the role reported by /api/auth/me. */
 import { useEffect, useState } from "react";
+import { KeyRound } from "lucide-react";
 import { api, getApiKey, setApiKey, type AuthMe } from "../api";
 import { useToast } from "./Toast";
 
@@ -23,12 +24,13 @@ export function KeyButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className={`rounded border px-2 py-1 text-sm hover:bg-panel2 ${
+        className={`inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border transition-colors hover:bg-muted ${
           me?.public && me.role === "anonymous"
-            ? "border-up/60 text-up" : "border-line text-slate-400"}`}
+            ? "border-up/60 text-up" : "border-border text-muted-foreground hover:text-foreground"}`}
         title={`API Key — ${roleLabel}`}
+        aria-label={`API Key — ${roleLabel}`}
       >
-        🔑
+        <KeyRound className="size-4" />
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"

@@ -1,9 +1,12 @@
 /** Inline SVG sparkline: price line + dashed prev_close baseline + area fill. */
 import { DOWN, UP } from "../format";
 
-export function Sparkline({ prices, prevClose, width = 96, height = 28, id }: {
+export function Sparkline({ prices, prevClose, width = 96, height = 28,
+                            id, area = true, className = "" }: {
   prices: number[]; prevClose?: number | null;
   width?: number; height?: number; id?: string;
+  /** draw the gradient area fill under the line (default on, as before) */
+  area?: boolean; className?: string;
 }) {
   const vals = prices.filter((v) => Number.isFinite(v));
   if (vals.length < 2) {
@@ -20,11 +23,11 @@ export function Sparkline({ prices, prevClose, width = 96, height = 28, id }: {
   const base = prevClose != null ? prevClose : vals[0];
   const color = last > base ? UP : last < base ? DOWN : "#94a3b8";
   const line = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
-  const area = `${line}L${x(vals.length - 1).toFixed(1)},${height}L${x(0).toFixed(1)},${height}Z`;
+  const areaPath = `${line}L${x(vals.length - 1).toFixed(1)},${height}L${x(0).toFixed(1)},${height}Z`;
   const gid = `sp-${id ?? Math.abs(hash(line)).toString(36)}`;
 
   return (
-    <svg width={width} height={height} className="block">
+    <svg width={width} height={height} className={`block ${className}`}>
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={color} stopOpacity="0.30" />
@@ -35,7 +38,7 @@ export function Sparkline({ prices, prevClose, width = 96, height = 28, id }: {
         <line x1={0} x2={width} y1={y(prevClose)} y2={y(prevClose)}
               stroke="#8b93a7" strokeOpacity="0.55" strokeDasharray="3 3" strokeWidth="0.8" />
       )}
-      <path d={area} fill={`url(#${gid})`} />
+      {area && <path d={areaPath} fill={`url(#${gid})`} />}
       <path d={line} fill="none" stroke={color} strokeWidth="1.2" />
     </svg>
   );

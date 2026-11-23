@@ -95,7 +95,7 @@ export function MarketStatusPill() {
   const label = holiday === false ? "休市" : phase.label;
   const live = holiday !== false && phase.label === "交易中";
   return (
-    <span className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-2 py-0.5 text-xs text-slate-400">
+    <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-panel px-2 py-0.5 text-xs text-slate-400">
       <span
         className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-400 pulse-dot" : "bg-slate-500"}`}
       />

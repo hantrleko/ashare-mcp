@@ -39,10 +39,10 @@ export function Card({ title, children, className = "", extra }: {
   title?: string; children: ReactNode; className?: string; extra?: ReactNode;
 }) {
   return (
-    <section className={`rounded-lg border border-line bg-panel p-4 ${className}`}>
+    <section className={`rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:p-5 ${className}`}>
       {(title || extra) && (
-        <header className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-medium text-slate-300">{title}</h3>
+        <header className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium tracking-tight text-foreground">{title}</h3>
           {extra}
         </header>
       )}

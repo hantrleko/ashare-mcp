@@ -1,14 +1,37 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
 
 @theme {
+  /* A-share convention: red up / green down */
   --color-up: #ef5350;
   --color-down: #26a69a;
-  --color-panel: #12161f;
-  --color-panel2: #171c28;
-  --color-line: #232a3a;
-  --color-bg: #0b0e14;
-  --color-accent: #7b7ff2;
+  /* dark (OLED-ish) base */
+  --color-bg: #070a10;
+  --color-panel: #0f131c;
+  --color-panel2: #151a26;
+  --color-line: #222a3a;
+  --color-accent: #3b82f6;
   --color-chart-text: #8b93a7;
+}
+
+/* shadcn semantic tokens mapped onto our palette */
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-slate-200);
+  --color-card: var(--color-panel);
+  --color-card-foreground: var(--color-slate-200);
+  --color-popover: var(--color-panel2);
+  --color-popover-foreground: var(--color-slate-200);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--color-panel2);
+  --color-secondary-foreground: var(--color-slate-200);
+  --color-muted: var(--color-panel2);
+  --color-muted-foreground: var(--color-slate-400);
+  --color-accent-foreground: #ffffff;
+  --color-border: var(--color-line);
+  --color-input: var(--color-line);
+  --color-ring: var(--color-accent);
 }
 
 :root {
@@ -21,6 +44,7 @@
   --color-panel2: #f1f4f9;
   --color-line: #d8dee9;
   --color-bg: #eef1f6;
+  --color-accent: #2563eb;
   /* invert the slate scale so text-slate-* stays readable */
   --color-slate-50: #020617;
   --color-slate-100: #0f172a;
@@ -49,7 +73,8 @@ html, body, #root {
 body {
   background-color: var(--color-bg);
   color: var(--color-slate-300);
-  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-family: "Inter Variable", "Segoe UI", "Microsoft YaHei", "PingFang SC",
+    system-ui, sans-serif;
 }
 
 .num {
@@ -75,6 +100,26 @@ body {
   50% { opacity: 0.35; }
 }
 .pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+/* motion baseline */
+a, button, [role="button"], input, select, .transition-colors {
+  transition-property: color, background-color, border-color, opacity;
+  transition-duration: 150ms;
+}
+:where(a, button, input, select, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-up, .flash-down, .pulse-dot {
+    animation: none;
+  }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
 
 /* bottom tab bar safe area */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0); }

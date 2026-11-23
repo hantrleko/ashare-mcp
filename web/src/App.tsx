@@ -1,5 +1,9 @@
 import { Suspense, lazy, useState } from "react";
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
+import {
+  ArrowLeftRight, Ellipsis, FlaskConical, House, LineChart, Moon,
+  Search, Sun, Trophy, Wallet, type LucideIcon,
+} from "lucide-react";
 import { AccountProvider } from "./account";
 import { AccountSwitcher } from "./components/AccountSwitcher";
 import { KeyButton } from "./components/KeyButton";
@@ -29,28 +33,41 @@ const LINKS = [
   { to: "/arena", label: "竞技场" },
 ];
 
-const MBAR = [
-  { to: "/", label: "首页" },
-  { to: "/screener", label: "选股" },
-  { to: "/paper", label: "模拟盘" },
-  { to: "/backtest", label: "回测" },
-  { to: "/arena", label: "竞技场" },
+const MBAR: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: "/", label: "首页", icon: House },
+  { to: "/screener", label: "选股", icon: FlaskConical },
+  { to: "/paper", label: "模拟盘", icon: Wallet },
+  { to: "/backtest", label: "回测", icon: ArrowLeftRight },
+  { to: "/arena", label: "竞技场", icon: Trophy },
 ];
 
-const MORE = [
-  { to: "/market", label: "市场" },
-  { to: "/factor", label: "因子" },
+const MORE: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: "/market", label: "市场", icon: LineChart },
+  { to: "/factor", label: "因子", icon: FlaskConical },
 ];
+
+function Logo({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path d="M3 17 9 11l4 4 8-9" fill="none" stroke="var(--color-up)"
+            strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M15 6h6v6" fill="none" stroke="var(--color-up)"
+            strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function ThemeToggle() {
   const [t, setT] = useState(getTheme());
+  const Icon = t === "dark" ? Moon : Sun;
   return (
     <button
       onClick={() => { const n = t === "dark" ? "light" : "dark"; setTheme(n); setT(n); }}
-      className="rounded border border-line px-2 py-1 text-sm text-slate-400 hover:bg-panel2"
+      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      aria-label="切换主题"
       title="切换主题"
     >
-      {t === "dark" ? "☾" : "☀"}
+      <Icon className="size-4" />
     </button>
   );
 }
@@ -63,10 +80,10 @@ export default function App() {
       <AccountProvider>
       <HashRouter>
         <div className="flex min-h-full flex-col">
-          <header className="sticky top-0 z-30 border-b border-line bg-bg/95 backdrop-blur">
+          <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
             <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
-              <NavLink to="/" className="flex items-center gap-2 whitespace-nowrap text-base font-semibold text-slate-100">
-                <span className="text-up">▲</span>
+              <NavLink to="/" className="flex items-center gap-2 whitespace-nowrap text-base font-semibold text-foreground">
+                <Logo className="h-5 w-5" />
                 <span className="sm:hidden">A股</span>
                 <span className="hidden sm:inline">A股研究台</span>
               </NavLink>
@@ -78,8 +95,10 @@ export default function App() {
                     to={l.to}
                     end={l.to === "/"}
                     className={({ isActive }) =>
-                      `rounded px-3 py-1.5 text-sm ${
-                        isActive ? "bg-panel2 text-slate-100" : "text-slate-400 hover:text-slate-200"
+                      `rounded-md px-3 py-1.5 text-sm transition-colors ${
+                        isActive
+                          ? "bg-muted font-medium text-foreground shadow-[inset_0_-2px_0_var(--color-accent)]"
+                          : "text-muted-foreground hover:text-foreground"
                       }`
                     }
                   >
@@ -92,17 +111,17 @@ export default function App() {
                 <SearchBox className="hidden w-56 sm:block sm:w-72" />
                 <button
                   onClick={() => setSearchOpen(!searchOpen)}
-                  className="rounded border border-line px-2 py-1 text-sm text-slate-400 hover:bg-panel2 sm:hidden"
+                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:hidden"
                   aria-label="搜索"
                 >
-                  ⌕
+                  <Search className="size-4" />
                 </button>
                 <KeyButton />
                 <ThemeToggle />
               </div>
             </div>
             {searchOpen && (
-              <div className="border-t border-line px-4 py-2 sm:hidden">
+              <div className="border-t border-border px-4 py-2 sm:hidden">
                 <SearchBox className="w-full" onPick={() => setSearchOpen(false)} />
               </div>
             )}
@@ -124,45 +143,53 @@ export default function App() {
             </Suspense>
           </main>
 
-          <footer className="border-t border-line py-4 text-center text-xs text-slate-500 max-sm:hidden">
+          <footer className="border-t border-border py-4 text-center text-xs text-muted-foreground max-sm:hidden">
             仅供研究与模拟交易，非投资建议 · ashare-mcp
           </footer>
 
-          <nav className="fixed bottom-0 z-30 flex w-full border-t border-line bg-bg/95 pb-safe backdrop-blur sm:hidden">
+          <nav className="fixed bottom-0 z-30 flex w-full border-t border-border bg-background/95 pb-safe backdrop-blur sm:hidden">
             {MBAR.map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}
                 end={l.to === "/"}
                 className={({ isActive }) =>
-                  `flex-1 py-2.5 text-center text-xs ${
-                    isActive ? "text-slate-100" : "text-slate-500"
+                  `flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px] transition-colors ${
+                    isActive ? "text-foreground" : "text-muted-foreground"
                   }`
                 }
               >
-                {l.label}
+                {({ isActive }) => (
+                  <>
+                    <l.icon className={`size-4 ${isActive ? "text-accent" : ""}`} />
+                    {l.label}
+                  </>
+                )}
               </NavLink>
             ))}
             <button
               onClick={() => setMoreOpen(!moreOpen)}
-              className="flex-1 py-2.5 text-center text-xs text-slate-500"
+              className="flex flex-1 cursor-pointer flex-col items-center gap-0.5 py-1.5 text-[11px] text-muted-foreground"
+              aria-label="更多"
             >
+              <Ellipsis className="size-4" />
               更多
             </button>
           </nav>
           {moreOpen && (
-            <div className="fixed bottom-12 right-0 z-40 m-3 w-32 rounded-lg border border-line bg-panel py-1 shadow-xl sm:hidden">
+            <div className="fixed bottom-14 right-3 z-40 w-32 rounded-xl border border-border bg-popover py-1 shadow-xl sm:hidden">
               {MORE.map((l) => (
                 <NavLink
                   key={l.to}
                   to={l.to}
                   onClick={() => setMoreOpen(false)}
                   className={({ isActive }) =>
-                    `block px-4 py-2.5 text-sm ${
-                      isActive ? "text-slate-100" : "text-slate-400"
+                    `flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
+                      isActive ? "text-foreground" : "text-muted-foreground"
                     }`
                   }
                 >
+                  <l.icon className="size-4" />
                   {l.label}
                 </NavLink>
               ))}
