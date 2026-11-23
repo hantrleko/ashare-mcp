@@ -13,6 +13,8 @@ inspector-config.json
 # Local tooling binaries (cloudflared etc.)
 tools/
 dist/
+build/
+*.spec.bak
 
 # Web frontend
 web/node_modules/

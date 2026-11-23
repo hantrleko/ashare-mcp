@@ -331,7 +331,12 @@ def _unhandled(request, exc):  # noqa: ANN001
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "providers": market_data.provider_status()}
+    out: dict[str, Any] = {"status": "ok",
+                           "providers": market_data.provider_status()}
+    if not PUBLIC:
+        from ..config import data_dir
+        out["data_dir"] = str(data_dir().resolve())
+    return out
 
 
 @app.get("/api/search")

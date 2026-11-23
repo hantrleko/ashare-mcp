@@ -13,6 +13,7 @@ Loop (60 s):
 """
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import threading
@@ -30,10 +31,67 @@ except Exception:
 
 _state: dict[str, Any] = {
     "enabled": False,
+    "reason": None,
     "last_trigger_check": None,
     "last_settlement_date": None,
     "last_error": None,
 }
+
+# Open handle on data_dir/scheduler.lock, held for the process life so a
+# second process on the same data dir cannot run the scheduler too.
+_lock_file: Any = None
+
+
+def _try_lock_file(f) -> bool:
+    """Non-blocking exclusive lock on an open file object."""
+    try:
+        f.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock_file(f) -> None:
+    try:
+        f.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
+def _acquire_lock() -> bool:
+    """Take an exclusive non-blocking OS lock on the scheduler lock file."""
+    global _lock_file
+    if _lock_file is not None:
+        return True
+    from ..config import data_dir
+    f = open(data_dir() / "scheduler.lock", "a+b")
+    if not _try_lock_file(f):
+        f.close()
+        return False
+    _lock_file = f
+    atexit.register(_release_lock)
+    return True
+
+
+def _release_lock() -> None:
+    global _lock_file
+    f, _lock_file = _lock_file, None
+    if f is None:
+        return
+    _unlock_file(f)
+    f.close()
 
 
 def _now() -> datetime:
@@ -45,7 +103,7 @@ def enabled() -> bool:
 
 
 def status() -> dict[str, Any]:
-    return {**_state, "enabled": enabled()}
+    return {**_state, "enabled": enabled() and _state["enabled"]}
 
 
 # ---------- helpers injected from api.py (kept lazy to avoid circulars) ----------
@@ -222,11 +280,47 @@ def _loop() -> None:
         time.sleep(60)
 
 
+# Retry interval while waiting for another process to release the lock.
+_LOCK_RETRY_SECS = 60.0
+_lock_wait_thread: threading.Thread | None = None
+
+
+def _wait_then_loop() -> None:
+    """Retry the scheduler lock until it is free, then run the loop here."""
+    global _lock_wait_thread
+    try:
+        while enabled() and not _state["enabled"]:
+            if _acquire_lock():
+                _state["enabled"] = True
+                _state["reason"] = None
+                log.info("scheduler lock acquired after wait; starting")
+                _loop()
+                return
+            time.sleep(_LOCK_RETRY_SECS)
+    finally:
+        _lock_wait_thread = None
+
+
 def start() -> None:
+    global _lock_wait_thread
     if not enabled() or _state["enabled"]:
         return
+    if not _acquire_lock():
+        _state["reason"] = "另一个进程正在运行调度器"
+        log.info("scheduler not started: %s", _state["reason"])
+        if _lock_wait_thread is None or not _lock_wait_thread.is_alive():
+            _lock_wait_thread = threading.Thread(
+                target=_wait_then_loop, daemon=True,
+                name="ashare-scheduler-wait")
+            _lock_wait_thread.start()
+        return
     _state["enabled"] = True
+    _state["reason"] = None
     threading.Thread(target=_loop, daemon=True, name="ashare-scheduler").start()
+
+
+def stop() -> None:
+    _release_lock()
 
 
 def sync_main(argv: list[str] | None = None) -> None:

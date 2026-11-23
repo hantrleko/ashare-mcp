@@ -193,6 +193,37 @@ Key 全权限；Agent Key 只能改自己的账户（`?account=` 必须匹配）
 - **行业分类** `data/industry.json`：申万一级行业（31 个，2021版）代码→行业映射，7 天自动刷新（6 小时节流），取数失败回退旧文件与打包快照 `data/industry.csv`；`GET /api/industries`、`POST /api/screen`（网页"选股"页）使用。
 - 已知限制：交易日历取数完全失败且无本地缓存时，盘中条件单检查退回到"周一~周五"规则——节假日盘中会用最近收盘价评估条件单（不会成交到不存在的行情）。
 
+## 桌面版（Windows）
+
+三种用法，数据一律在 `F:\Hermes\data`（与 Web 版共享）：
+
+**开发启动器** —— Edge 应用窗口（无标签栏），服务器沿用 8600，关窗不停服务：
+
+```powershell
+scripts\desktop-dev.cmd          # 或 powershell scripts\desktop-dev.ps1
+```
+
+8600 未运行时会先在后台启动；停止：`Stop-Process -Id (Get-Content $env:TEMP\ashare-web.pid)`。
+
+**源码运行（pywebview 原生窗口）**：
+
+```powershell
+uv run --extra desktop ashare-desktop
+```
+
+8600 已在运行且数据目录一致时直接附着到它（窗口标题 "A股研究台"）；否则在 8601 起自己的后端（8601 被占才用 8602–8609，此时界面设置按端口分别保存）。`ASHARE_DESKTOP_ATTACH_PORT` 可改附着端口。
+
+**打包 exe**（PyInstaller onedir，窗口化）：
+
+```powershell
+uv run --extra desktop --group build python scripts\build_desktop.py   # 可加 --data-dir
+```
+
+产物 `dist\desktop\ashare-desktop\ashare-desktop.exe`，旁边的 `ashare-desktop.json` 指定数据目录（默认 `F:\Hermes\data`，缺省回退 `%APPDATA%\ashare-mcp\data`）。`scripts\make_shortcuts.ps1` 在桌面生成两个快捷方式。
+
+- 日志：`%LOCALAPPDATA%\ashare-mcp\logs\desktop.log`；WebView2 存储：`%LOCALAPPDATA%\ashare-mcp\webview`（自选股/主题等按 origin 持久化）。
+- **调度器锁**：同一数据目录下无论起几个进程，`data\scheduler.lock` 保证只有一个跑调度器；`GET /api/scheduler` 的 `reason` 会显示"另一个进程正在运行调度器"。
+
 ## Streamlit 看板（轻量旧版）
 
 ```powershell

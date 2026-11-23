@@ -57,6 +57,20 @@ def test_health(client):
     assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
+def test_health_exposes_data_dir_locally(client, tmp_path):
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    # conftest sets ASHARE_MCP_DATA_DIR to tmp_path
+    assert r.json()["data_dir"] == str(tmp_path.resolve())
+
+
+def test_health_hides_data_dir_in_public(client, monkeypatch):
+    monkeypatch.setattr(api, "PUBLIC", True)
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert "data_dir" not in r.json()
+
+
 def test_search_and_quote(client):
     r = client.get("/api/search", params={"q": "茅台"})
     assert r.status_code == 200

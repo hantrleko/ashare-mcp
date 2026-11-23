@@ -17,14 +17,22 @@ dependencies = [
 
 [project.optional-dependencies]
 web = []
+desktop = [
+    "pywebview==6.2.1",
+]
 
 [dependency-groups]
+build = [
+    "pillow==12.3.0",
+    "pyinstaller==6.22.3",
+]
 dev = ["pytest>=9.2.0", "pytest-asyncio>=1.5.0"]
 
 [project.scripts]
 ashare-mcp-server = "ashare_mcp.server:main"
 ashare-web = "ashare_mcp.web.__main__:main"
 ashare-sync = "ashare_mcp.web.scheduler:sync_main"
+ashare-desktop = "ashare_mcp.desktop:main"
 
 [build-system]
 requires = ["hatchling"]
