@@ -92,9 +92,8 @@ def _resolve_data_dir() -> Path | None:
             return Path(d)
     except (OSError, ValueError):
         pass
-    return Path(os.environ.get("APPDATA",
-                              Path.home() / "AppData" / "Roaming")) / \
-        "ashare-mcp" / "data"
+    from ashare_mcp.config import user_data_dir
+    return user_data_dir()
 
 
 def _our_data_dir() -> Path:

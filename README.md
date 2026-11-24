@@ -184,6 +184,8 @@ Key 全权限；Agent Key 只能改自己的账户（`?account=` 必须匹配）
 
 ## 本地数据存储 / Local storage
 
+**数据目录**：`ASHARE_MCP_DATA_DIR` 环境变量优先。源码检出（含可编辑安装）默认 `<repo 上级>/data`（本机为 `F:\Hermes\data`）；pip/uvx 安装默认 `%APPDATA%\ashare-mcp\data`（非 Windows 为 `~/.ashare-mcp`）。安装模式首次启动时，若新目录尚无 `paper.db`，会自动把 uv 缓存旧安装里最新的 `paper.db`（或旧版 `paper_account.json`）复制过来，源文件不改动；`market.db` 属缓存不迁移。
+
 - `data/market.db` — **K线本地缓存（可随意删除）**。日K首次全量拉取后按结算点（A股 15:30 CST）增量同步；除权导致前/后复权基准变化时自动全量重抓；盘中未收盘的当日K只返回不落库。`ASHARE_MCP_STORE=0` 可完全禁用（直连网络）。
 - `data/paper.db` — **模拟账户（多账户，非缓存）**。旧版 `data/paper_account.json` 首次启动自动迁移为 `default` 账户，原文件保留为 `paper_account.json.migrated`。
 - **MCP**：所有 `paper_*` 工具接受 `account` 参数（默认 `"default"`）；`paper_list_accounts` / `paper_create_account` 管理账户。
@@ -219,7 +221,7 @@ uv run --extra desktop ashare-desktop
 uv run --extra desktop --group build python scripts\build_desktop.py   # 可加 --data-dir
 ```
 
-产物 `dist\desktop\ashare-desktop\ashare-desktop.exe`，旁边的 `ashare-desktop.json` 指定数据目录（默认 `F:\Hermes\data`，缺省回退 `%APPDATA%\ashare-mcp\data`）。`scripts\make_shortcuts.ps1` 在桌面生成两个快捷方式。
+产物 `dist\desktop\ashare-desktop\ashare-desktop.exe`，旁边的 `ashare-desktop.json` 指定数据目录（默认 `F:\Hermes\data`，缺省回退 `%APPDATA%\ashare-mcp\data`，与安装版默认目录一致）。`scripts\make_shortcuts.ps1` 在桌面生成两个快捷方式。
 
 - 日志：`%LOCALAPPDATA%\ashare-mcp\logs\desktop.log`；WebView2 存储：`%LOCALAPPDATA%\ashare-mcp\webview`（自选股/主题等按 origin 持久化）。
 - **调度器锁**：同一数据目录下无论起几个进程，`data\scheduler.lock` 保证只有一个跑调度器；`GET /api/scheduler` 的 `reason` 会显示"另一个进程正在运行调度器"。
