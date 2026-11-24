@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -676,6 +677,54 @@ def arena_revoke(account_id: str, request: Request) -> dict[str, Any]:
 def scheduler_status() -> dict[str, Any]:
     from . import scheduler
     return scheduler.status()
+
+
+@app.get("/api/events")
+def events(request: Request, since: str = "") -> dict[str, Any]:
+    """Trigger fill/fail events across accounts newer than ``since``."""
+    if PUBLIC:
+        role, _acct = _role(request)
+        if role != "admin":
+            raise HTTPException(status_code=403, detail="admin only")
+    store = _account_store()
+    out = []
+    for a in store.list():
+        try:
+            st, _ = store.load(a["id"])
+        except Exception:
+            continue
+        for t in st.get("triggers", []):
+            kind = "trigger_filled" if t.get("status") == "filled" \
+                else "trigger_failed" if t.get("status") == "failed" else None
+            if not kind:
+                continue
+            at = t.get("filled_at") if kind == "trigger_filled" \
+                else t.get("failed_at")
+            if not at or at <= since:
+                continue
+            out.append({
+                "id": t["id"], "account_id": a["id"],
+                "account_name": a.get("name") or a["id"],
+                "kind": kind, "symbol": t["symbol"],
+                "name": t.get("name") or t["symbol"],
+                "side": t["side"], "shares": t["shares"],
+                "price": t.get("filled_price"), "at": at,
+                "error": t.get("error"),
+            })
+    out.sort(key=lambda e: e["at"])
+    return {"data": out,
+            "now": datetime.now().isoformat(timespec="seconds")}
+
+
+@app.get("/api/arena/preview")
+def arena_preview() -> dict[str, Any]:
+    """Background-computed preview of the price-only house rules."""
+    from ..trading import house
+    st = house.preview_status()
+    if st["state"] == "missing":
+        house.start_preview()
+        st = house.preview_status()
+    return st
 
 
 @app.get("/api/market-clock")

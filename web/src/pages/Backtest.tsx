@@ -17,6 +17,8 @@ import { Seg } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { PageIntro } from "../components/Intro";
+import { InfoTip } from "../components/InfoTip";
 
 const STRAT: Record<string, { label: string; desc: string; params: [string, string, number][] }> = {
   ma_cross: { label: "均线交叉", desc: "快线上穿慢线持有", params: [["fast", "快线周期", 5], ["slow", "慢线周期", 20]] },
@@ -61,6 +63,8 @@ export default function Backtest() {
 
 function TabBar({ mode, setSp }: { mode: string; setSp: ReturnType<typeof useSearchParams>[1] }) {
   return (
+    <>
+    <PageIntro page="backtest" />
     <Seg
       options={TABS}
       value={mode}
@@ -68,6 +72,7 @@ function TabBar({ mode, setSp }: { mode: string; setSp: ReturnType<typeof useSea
       className="flex w-full p-1"
       btnClassName="flex-1 px-3 py-1.5 text-sm"
     />
+    </>
   );
 }
 
@@ -175,10 +180,10 @@ function SingleBacktest({ sp }: { sp: URLSearchParams }) {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
             <M label="期末资产" v={fmtNum(res.final_equity)} />
             <M label="总收益" v={fmtPct(res.total_return * 100)} cls={signedClass(res.total_return)} />
-            <M label="年化" v={fmtPct(res.annual_return * 100)} cls={signedClass(res.annual_return)} />
-            <M label="最大回撤" v={fmtDD(res.max_drawdown * 100)} cls={ddClass(res.max_drawdown)} />
-            <M label="Sharpe" v={res.sharpe.toFixed(2)} />
-            <M label="交易/胜率" v={`${res.num_trades}笔 / ${res.win_rate != null ? (res.win_rate * 100).toFixed(0) + "%" : "—"}`} />
+            <M label={<>年化<InfoTip term="年化" /></>} v={fmtPct(res.annual_return * 100)} cls={signedClass(res.annual_return)} />
+            <M label={<>最大回撤<InfoTip term="最大回撤" /></>} v={fmtDD(res.max_drawdown * 100)} cls={ddClass(res.max_drawdown)} />
+            <M label={<>Sharpe<InfoTip term="夏普" /></>} v={res.sharpe.toFixed(2)} />
+            <M label={<>交易/胜率<InfoTip term="胜率" /></>} v={`${res.num_trades}笔 / ${res.win_rate != null ? (res.win_rate * 100).toFixed(0) + "%" : "—"}`} />
           </div>
           <p className="text-xs text-slate-500">
             {res.symbol} · {res.start}–{res.end} · {res.bars}根K线 · 数据源 {res.source ?? "—"}

@@ -5,7 +5,7 @@ import {
   FlaskConical, ListPlus, ScanSearch, Trophy, X,
   type LucideIcon,
 } from "lucide-react";
-import { api, type EquityPoint, type OverviewData, type PaperStatus, type Quote } from "../api";
+import { api, type EquityPoint, type OverviewData, type PaperStatus, type PrewarmStatus, type Quote } from "../api";
 import { Card, ErrorBanner, PctText, Skeleton } from "../components/ui";
 import { SearchBox } from "../components/SearchBox";
 import { Sparkline } from "../components/Sparkline";
@@ -19,6 +19,9 @@ import {
 } from "@/components/ui/table";
 import { Skeleton as Sk } from "@/components/ui/skeleton";
 import { CategoryBar } from "@/components/tremor/CategoryBar";
+import { PageIntro } from "../components/Intro";
+import { DemoButton } from "../components/Demo";
+import { WELCOME_KEY } from "../lib/glossary";
 
 const DEFAULT_WATCH = ["600519", "000001", "300750", "601318", "000858"];
 const WATCH_KEY = "ashare_watchlist";
@@ -54,6 +57,53 @@ const QUICK: { to: string; label: string; desc: string; icon: LucideIcon }[] = [
   { to: "/arena", label: "AI 竞技场", desc: "Agent 模拟盘排行", icon: Trophy },
 ];
 
+/** 后台预热进度小字：仅 running 时显示。 */
+export function PrewarmLine() {
+  const [pw, setPw] = useState<PrewarmStatus | null>(null);
+  useEffect(() => {
+    let stop = false;
+    const load = () => api.scheduler()
+      .then((r) => { if (!stop) setPw(r.prewarm ?? null); })
+      .catch(() => {});
+    load();
+    const id = setInterval(load, 15000);
+    return () => { stop = true; clearInterval(id); };
+  }, []);
+  if (!pw || pw.state !== "running") return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      后台正在预加载行情数据 {pw.total ? `${pw.done}/${pw.total}` : pw.step}
+      ，完成后选股和因子检验会快很多
+    </p>
+  );
+}
+
+function WelcomeCard() {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return !!localStorage.getItem(WELCOME_KEY); }
+    catch { return false; }
+  });
+  if (dismissed) return null;
+  return (
+    <Card>
+      <div className="mb-1.5 text-sm font-semibold">欢迎使用 A股研究台</div>
+      <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+        <li>看行情、选股、回测和因子研究；</li>
+        <li>用模拟账户按 A 股规则练习交易；</li>
+        <li>AI agent 可以通过 MCP 使用同样的数据和账户。</li>
+      </ul>
+      <p className="mt-2 text-xs text-muted-foreground/80">
+        仅供研究与模拟交易，不构成投资建议，不连接真实券商。
+      </p>
+      <div className="mt-2"><PrewarmLine /></div>
+      <Button variant="secondary" className="mt-2.5" onClick={() => {
+        try { localStorage.setItem(WELCOME_KEY, "1"); } catch { /* */ }
+        setDismissed(true);
+      }}>知道了</Button>
+    </Card>
+  );
+}
+
 export default function Home() {
   const nav = useNavigate();
   const [indices, setIndices] = useState<Quote[]>([]);
@@ -61,6 +111,7 @@ export default function Home() {
   const [watch, setWatch] = useState<string[]>(loadWatch);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [status, setStatus] = useState<PaperStatus | null>(null);
+  const [hasOrders, setHasOrders] = useState(true);
   const [hist, setHist] = useState<EquityPoint[]>([]);
   const [ov, setOv] = useState<OverviewData | null>(null);
   const [ovLoading, setOvLoading] = useState(false);
@@ -95,10 +146,12 @@ export default function Home() {
   const { account, accounts } = useAccount();
   const loadStatus = useCallback(async () => {
     try {
-      const [s, h] = await Promise.all([
-        api.paperStatus(account), api.paperHistory(account)]);
+      const [s, h, o] = await Promise.all([
+        api.paperStatus(account), api.paperHistory(account),
+        api.paperOrders(account, 1)]);
       setStatus(s);
       setHist(h.data);
+      setHasOrders(o.data.length > 0);
     } catch { /* offline ok */ }
   }, [account]);
 
@@ -166,9 +219,12 @@ export default function Home() {
 
   const big = indices.slice(0, 4);
   const small = indices.slice(4);
+  const accountEmpty = !!status && status.position_count === 0 && !hasOrders;
 
   return (
     <div className="space-y-5">
+      <PageIntro page="home" />
+      <WelcomeCard />
       {indices.length === 0 && !idxErr && <Skeleton rows={2} />}
 
       {/* headline index KPI cards */}
@@ -409,9 +465,11 @@ export default function Home() {
             ) : (
               <p className="text-sm text-muted-foreground">账户信息暂不可用</p>
             )}
+            {accountEmpty && <DemoButton className="mt-3" />}
           </Card>
 
           <Card title="市场广度">
+            <div className="mb-2"><PrewarmLine /></div>
             {!ov && !ovLoading && (
               <div className="space-y-3">
                 <p className="text-xs leading-5 text-muted-foreground">

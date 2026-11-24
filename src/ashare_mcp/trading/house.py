@@ -255,6 +255,224 @@ def _value_targets(spot: pd.DataFrame) -> list[dict[str, Any]]:
     ]
 
 
+# ---------------- price-only rules preview (look-ahead-safe) ----------------
+
+PREVIEW_FILE = "arena_preview.json"
+PREVIEW_DAYS = 120
+_preview_thread = None
+
+
+def _dated_closes(code: str,
+                  get_kline: Callable | None = None) -> dict[str, float]:
+    get_kline = get_kline or (
+        lambda s, **kw: market_data.call("get_kline", s, **kw))
+    try:
+        bars, _ = get_kline(code, period="daily", adjust="qfq")
+    except Exception as e:
+        log.debug("preview kline %s failed: %s", code, e)
+        return {}
+    return {str(b["date"])[:10]: float(b["close"]) for b in bars
+            if b.get("close") is not None}
+
+
+def _series_upto(pairs: list[tuple[str, float]], t: str) -> list[float]:
+    """Closes on dates <= t (the no-look-ahead truncation)."""
+    import bisect
+    dates = [d for d, _ in pairs]
+    i = bisect.bisect_right(dates, t)
+    return [v for _, v in pairs[:i]]
+
+
+def _close_le(pairs: list[tuple[str, float]], t: str) -> float | None:
+    import bisect
+    dates = [d for d, _ in pairs]
+    i = bisect.bisect_right(dates, t) - 1
+    return pairs[i][1] if i >= 0 else None
+
+
+def _weekly_rebalance_dates(dates: list[str]) -> list[str]:
+    """Last trading date of each ISO week, in order."""
+    weeks: dict[tuple[int, int], str] = {}
+    for d in dates:
+        iso = date.fromisoformat(d).isocalendar()[:2]
+        if iso not in weeks or d > weeks[iso]:
+            weeks[iso] = d
+    return sorted(weeks.values())
+
+
+def _nav_stats(nav: list[float]) -> dict[str, float]:
+    peak, mdd = nav[0], 0.0
+    for v in nav:
+        peak = max(peak, v)
+        mdd = min(mdd, v / peak - 1)
+    return {"total": round(nav[-1] - 1, 4), "max_dd": round(mdd, 4)}
+
+
+def preview_backtest(
+        universe: list[str] | None = None,
+        names: dict[str, str] | None = None,
+        get_kline: Callable | None = None,
+        get_index_kline: Callable | None = None,
+        window_days: int = PREVIEW_DAYS) -> dict[str, Any]:
+    """Weekly-rebalanced NAV for the two price-only house rules
+    (trend, momentum) vs CSI 300, over the last ``window_days``
+    trading days.  Equal weight, no costs.  The signal uses only
+    closes <= the rebalance date and the position is entered at the
+    next trading date's close, so there is no look-ahead and no
+    same-bar fill.
+    """
+    get_kline = get_kline or (
+        lambda s, **kw: market_data.call("get_kline", s, **kw))
+    get_index_kline = get_index_kline or (
+        lambda s, **kw: market_data.call("get_index_kline", s, **kw))
+    if universe is None:
+        uni = _universe()
+        universe = [str(c) for c in uni["code6"]]
+        names = {str(r.code6): str(r.name) for r in uni.itertuples()}
+    names = names or {}
+
+    ibars, _ = get_index_kline("sh000300", period="daily")
+    bench = [(str(b["date"])[:10], float(b["close"])) for b in ibars
+             if b.get("close")]
+    all_dates = [d for d, _ in bench]
+    window = set(all_dates[-window_days:])
+    rebs = [d for d in _weekly_rebalance_dates(all_dates) if d in window]
+    if len(rebs) < 2:
+        raise ValueError("预览区间不足")
+
+    # Signal at the close of rebalance date t (closes <= t), but the
+    # position is only entered at the close of the NEXT trading date —
+    # same convention as the backtest engine (signal at close, fill next
+    # day), so a jump on the signal day itself is not captured.
+    import bisect as _bs
+
+    def _day_after(d: str) -> str | None:
+        i = _bs.bisect_right(all_dates, d)
+        return all_dates[i] if i < len(all_dates) else None
+
+    periods: list[tuple[str, str, str]] = []  # (signal_date, entry, exit)
+    for k in range(len(rebs)):
+        t = rebs[k]
+        entry = _day_after(t)
+        if entry is None:
+            break
+        nxt_reb = rebs[k + 1] if k + 1 < len(rebs) else None
+        exit_ = (_day_after(nxt_reb) if nxt_reb is not None
+                 else None) or all_dates[-1]
+        if exit_ <= entry:
+            continue
+        periods.append((t, entry, exit_))
+    if not periods:
+        raise ValueError("预览区间不足")
+
+    series: dict[str, list[tuple[str, float]]] = {}
+    for c in universe:
+        dc = _dated_closes(c, get_kline)
+        if dc:
+            series[c] = sorted(dc.items())
+
+    def nav_for(rule) -> tuple[list[float], list[dict[str, Any]]]:
+        nav = [1.0]
+        last_targets: list[dict[str, Any]] = []
+        for t, entry, exit_ in periods:
+            closes = {c: _series_upto(pairs, t)
+                      for c, pairs in series.items()}
+            last_targets = rule(closes, names)
+            rets = []
+            for tgt in last_targets:
+                c = tgt["code"]
+                p0 = _close_le(series.get(c, []), entry)
+                p1 = _close_le(series.get(c, []), exit_)
+                if p0 and p1:
+                    rets.append(p1 / p0 - 1)
+            nav.append(nav[-1] * (1 + (sum(rets) / len(rets)
+                                       if rets else 0.0)))
+        return nav, last_targets
+
+    trend_nav, trend_latest = nav_for(_trend_targets)
+    mom_nav, mom_latest = nav_for(_momentum_targets)
+    bench_nav = [1.0]
+    for t, entry, exit_ in periods:
+        p0 = _close_le(bench, entry) or _close_le(bench, t)
+        p1 = _close_le(bench, exit_) or p0
+        bench_nav.append(bench_nav[-1] * (p1 / p0 if p0 else 1.0))
+    out_dates = [periods[0][1]] + [x for _, _, x in periods]
+    return {
+        "days": window_days,
+        "dates": out_dates,
+        "series": {
+            "trend": [round(v, 4) for v in trend_nav],
+            "momentum": [round(v, 4) for v in mom_nav],
+            "bench": [round(v, 4) for v in bench_nav],
+        },
+        "stats": {
+            "trend": _nav_stats(trend_nav),
+            "momentum": _nav_stats(mom_nav),
+            "bench": _nav_stats(bench_nav),
+        },
+        "latest": {"trend": trend_latest, "momentum": mom_latest},
+        "value_note": "低估值需实盘运行（无历史估值数据，无法回测）",
+        "caption": "周末收盘后选股、下一交易日收盘价成交、等权、未计交易"
+                   "成本；股票池为当前市值前300，存在幸存者偏差和前视偏"
+                   "差。仅用于了解规则特点。",
+    }
+
+
+def _preview_path():
+    from ..config import data_dir
+    return data_dir() / PREVIEW_FILE
+
+
+def preview_cached() -> dict[str, Any] | None:
+    """Cached preview computed today, or None."""
+    try:
+        rec = json.loads(_preview_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return rec if rec.get("date") == _cn_today() else None
+
+
+def _cn_today() -> str:
+    """CN-local date, same source as the scheduler/calendar."""
+    return cal._cn_now().date().isoformat()
+
+
+def compute_preview() -> dict[str, Any]:
+    """Run the preview backtest and cache it per trading date."""
+    payload = preview_backtest()
+    rec = {"date": _cn_today(), **payload}
+    _preview_path().write_text(json.dumps(rec, ensure_ascii=False),
+                               encoding="utf-8")
+    return rec
+
+
+def preview_status() -> dict[str, Any]:
+    rec = preview_cached()
+    if rec is not None:
+        return {"state": "ready", **rec}
+    if _preview_thread is not None and _preview_thread.is_alive():
+        return {"state": "running"}
+    return {"state": "missing"}
+
+
+def start_preview() -> None:
+    """Kick off a background preview compute (idempotent)."""
+    global _preview_thread
+    if _preview_thread is not None and _preview_thread.is_alive():
+        return
+
+    def _run() -> None:
+        try:
+            compute_preview()
+            log.info("arena preview computed")
+        except Exception:
+            log.exception("arena preview failed")
+    import threading
+    _preview_thread = threading.Thread(target=_run, daemon=True,
+                                       name="ashare-arena-preview")
+    _preview_thread.start()
+
+
 # ---------------- plan / execute ----------------
 
 def _store_or_default(store: AccountStore | None) -> AccountStore:

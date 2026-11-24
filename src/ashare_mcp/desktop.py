@@ -18,7 +18,9 @@ import os
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta
 from pathlib import Path
 
 TITLE = "A股研究台"
@@ -205,6 +207,222 @@ def _start_backend(port: int):
     return server, t
 
 
+# ---------- tray notifications ----------
+
+# WebView2 here auto-denies Notification.requestPermission() without firing
+# PermissionRequested, so the desktop app sends Windows notifications itself:
+# poll /api/events and show NotifyIcon balloon tips.
+EVENTS_POLL_SECS = 30.0
+EVENT_MAX_AGE = timedelta(hours=24)
+EVENT_BATCH_MAX = 3
+
+
+def _events_cursor_path() -> Path:
+    d = _appdata() / "ashare-mcp"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "events_cursor.txt"
+
+
+def _read_cursor() -> str | None:
+    try:
+        s = _events_cursor_path().read_text(encoding="utf-8").strip()
+        return s or None
+    except OSError:
+        return None
+
+
+def _write_cursor(since: str) -> None:
+    try:
+        _events_cursor_path().write_text(since, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _get_events(base_url: str, since: str | None,
+                timeout: float = 5.0) -> dict | None:
+    try:
+        q = f"?since={urllib.parse.quote(since)}" if since else ""
+        with urllib.request.urlopen(base_url + "/api/events" + q,
+                                    timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _recent(events: list[dict], now_iso: str,
+            max_age: timedelta = EVENT_MAX_AGE) -> list[dict]:
+    """Events with `at` within max_age of the server's `now`."""
+    try:
+        now = datetime.fromisoformat(now_iso)
+    except (TypeError, ValueError):
+        return list(events)
+    out = []
+    for ev in events:
+        try:
+            at = datetime.fromisoformat(str(ev.get("at") or ""))
+        except ValueError:
+            continue
+        if now - at <= max_age:
+            out.append(ev)
+    return out
+
+
+def _event_text(ev: dict) -> tuple[str, str, str]:
+    """(title, body, kind) — same wording as the web notification path."""
+    side = {"buy": "买入", "sell": "卖出"}.get(ev.get("side"),
+                                              ev.get("side") or "")
+    px = ev.get("price") if ev.get("price") is not None \
+        else ev.get("filled_price")
+    body = (f"{ev.get('account_name') or ''} · "
+            f"{ev.get('name') or ''} {ev.get('symbol') or ''} "
+            f"{side} {ev.get('shares') or ''} 股"
+            + (f" @ {px}" if px is not None else ""))
+    if ev.get("kind") == "trigger_failed":
+        err = ev.get("error")
+        return "条件单失败", body + (f"（{err}）" if err else ""), "warn"
+    return "条件单成交", body, "info"
+
+
+def _balloon_plan(events: list[dict]) -> list[tuple[str, str, str]]:
+    """One (title, body, kind) balloon per event, or a single batched one
+    when more than EVENT_BATCH_MAX fired in one poll."""
+    if len(events) > EVENT_BATCH_MAX:
+        return [("条件单已触发", f"{len(events)} 笔条件单已触发", "info")]
+    return [_event_text(ev) for ev in events]
+
+
+def _ui_invoke(win, fn, timeout: float = 90.0) -> bool:
+    """Run fn() on the WebView2 UI thread; retries while it initializes.
+
+    pythonnet (``System``) only becomes importable once the winforms GUI
+    thread has loaded the CLR, so the import itself is retried too.
+    """
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        try:
+            from System import Action
+        except ImportError:
+            time.sleep(1.0)
+            continue
+        native = getattr(win, "native", None)
+        wv = getattr(native, "webview", None)
+        if wv is not None:
+            try:
+                wv.Invoke(Action(fn))
+                return True
+            except Exception:
+                time.sleep(1.0)
+        else:
+            time.sleep(0.5)
+    return False
+
+
+def _setup_tray(win, icon_path: Path) -> dict:
+    """Create a NotifyIcon on the UI thread; returns a holder dict."""
+    log = logging.getLogger(__name__)
+    holder: dict = {}
+
+    def _create() -> None:
+        from System.Drawing import Icon, SystemIcons
+        from System.Windows.Forms import NotifyIcon
+        ni = NotifyIcon()
+        try:
+            ni.Icon = Icon(str(icon_path)) if icon_path.exists() \
+                else SystemIcons.Application
+        except Exception:
+            ni.Icon = SystemIcons.Application
+        ni.Text = TITLE
+        ni.Visible = True
+
+        def _clicked(_s, _e) -> None:
+            try:
+                win.restore()
+                win.show()
+                win.evaluate_js("location.hash='#/paper'")
+                log.info("balloon clicked -> #/paper")
+            except Exception:
+                log.exception("balloon click handling failed")
+
+        ni.BalloonTipClicked += _clicked
+        holder["ni"] = ni
+        holder["win"] = win
+        log.info("tray icon ready")
+
+    if _ui_invoke(win, _create):
+        return holder
+    log.warning("tray icon: webview UI thread never became available")
+    return holder
+
+
+def _tray_balloon(holder: dict, title: str, body: str,
+                  kind: str = "info") -> None:
+    ni = holder.get("ni")
+    win = holder.get("win")
+    if ni is None or win is None:
+        return
+    log = logging.getLogger(__name__)
+
+    def _show() -> None:
+        from System.Windows.Forms import ToolTipIcon
+        ni.ShowBalloonTip(
+            8000, title, body,
+            ToolTipIcon.Warning if kind == "warn" else ToolTipIcon.Info)
+
+    try:
+        # NotifyIcon was created on the GUI thread; marshal the call back
+        # onto it (cross-thread access can hang the WinForms loop).
+        if _ui_invoke(win, _show, timeout=10.0):
+            log.info("notify [%s] %s", title, body)
+        else:
+            log.warning("balloon skipped: UI thread busy")
+    except Exception:
+        log.exception("balloon failed")
+
+
+def _dispose_tray(win, holder: dict) -> None:
+    ni = holder.get("ni")
+    if ni is None:
+        return
+
+    def _d() -> None:
+        ni.Visible = False
+        ni.Dispose()
+    try:
+        _ui_invoke(win, _d, timeout=5.0)
+    except Exception:
+        pass
+
+
+def _events_loop(base_url: str, holder: dict, stop: threading.Event,
+                 log) -> None:
+    """Poll /api/events every 30 s.
+
+    With no persisted cursor the first response only seeds it (old events
+    never notify). With a persisted cursor, events missed while the app was
+    closed are notified only if <24 h old; older ones just advance the
+    cursor.
+    """
+    since = _read_cursor()
+    first = since is None
+    while not stop.is_set():
+        r = _get_events(base_url, since)
+        if r is not None:
+            now = r.get("now")
+            events = r.get("data") or []
+            if not first:
+                for title, body, kind in _balloon_plan(
+                        _recent(events, now or "")):
+                    try:
+                        _tray_balloon(holder, title, body, kind)
+                    except Exception:
+                        log.exception("tray notify failed")
+            first = False
+            if now:
+                since = now
+                _write_cursor(since)
+        stop.wait(EVENTS_POLL_SECS)
+
+
 def main() -> None:
     log_path = _fix_stdio()
     log = logging.getLogger(__name__)
@@ -247,8 +465,12 @@ def main() -> None:
         server_t = None
         log.info("attaching to %s", url)
 
-    icon = _exe_dir() / "ashare.ico" if _frozen() else \
-        Path(__file__).resolve().parents[2] / "packaging" / "ashare.ico"
+    if _frozen():
+        # onedir datas land in sys._MEIPASS (the _internal dir)
+        icon = Path(getattr(sys, "_MEIPASS", _exe_dir())) / "ashare.ico"
+    else:
+        icon = Path(__file__).resolve().parents[2] / "packaging" / \
+            "ashare.ico"
     win = webview.create_window(
         TITLE, html=_LOADING_HTML, width=1440, height=900,
         min_size=(1024, 700), background_color="#070a10")
@@ -261,6 +483,24 @@ def main() -> None:
 
     threading.Thread(target=_load, daemon=True).start()
 
+    # Tray icon + condition-order event notifications (works in both
+    # attach and own-backend mode; the events endpoint is the same app).
+    stop_events = threading.Event()
+    tray_holder: dict = {}
+
+    def _tray_and_events() -> None:
+        try:
+            tray_holder.update(_setup_tray(win, icon))
+        except Exception:
+            log.exception("tray setup failed; notifications disabled")
+        try:
+            _events_loop(url, tray_holder, stop_events, log)
+        except Exception:
+            log.exception("events loop died")
+
+    threading.Thread(target=_tray_and_events, daemon=True,
+                     name="ashare-events").start()
+
     kwargs = dict(private_mode=False, storage_path=str(_webview_dir()),
                   gui="edgechromium")
     if icon.exists():
@@ -270,6 +510,8 @@ def main() -> None:
     try:
         webview.start(**kwargs)
     finally:
+        stop_events.set()
+        _dispose_tray(win, tray_holder)
         if server is not None:
             server.should_exit = True
             if server_t is not None:

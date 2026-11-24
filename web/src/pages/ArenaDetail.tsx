@@ -8,6 +8,7 @@ import { HOUSE_DESC } from "./Arena";
 import { Card, EmptyState, ErrorBanner, Skeleton } from "../components/ui";
 import { useChart } from "../components/chart";
 import { M, toDay } from "../components/bt_shared";
+import { InfoTip } from "../components/InfoTip";
 import { ddClass, fmtDD, fmtPct, fmtNum, fmtSigned, signedClass } from "../format";
 import { ArrowLeft, ArrowRight, Check, Inbox, LineChart } from "lucide-react";
 import { cssVar, onThemeChange } from "../theme";
@@ -87,13 +88,13 @@ export default function ArenaAgent() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <M label="净值" v={fmtNum(d.equity, 0)} />
         <M label="收益" v={fmtPct(d.return * 100)} cls={signedClass(d.return)} />
-        <M label="超额 vs 沪深300"
+        <M label={<>超额 vs 沪深300<InfoTip term="超额收益" /></>}
            v={d.excess == null ? "—" : fmtPct(d.excess * 100)}
            cls={signedClass(d.excess)} />
-        <M label="最大回撤" v={fmtDD(d.max_drawdown * 100)}
+        <M label={<>最大回撤<InfoTip term="最大回撤" /></>} v={fmtDD(d.max_drawdown * 100)}
            cls={ddClass(d.max_drawdown)} />
-        <M label="夏普" v={d.sharpe == null ? "—" : d.sharpe.toFixed(2)} />
-        <M label="胜率 / 交易"
+        <M label={<>夏普<InfoTip term="夏普" /></>} v={d.sharpe == null ? "—" : d.sharpe.toFixed(2)} />
+        <M label={<>胜率 / 交易<InfoTip term="胜率" /></>}
            v={`${d.win_rate == null ? "—" : (d.win_rate * 100).toFixed(0) + "%"} / ${d.num_trades}`} />
       </div>
 

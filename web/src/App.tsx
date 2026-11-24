@@ -1,8 +1,8 @@
 import { Suspense, lazy, useState } from "react";
 import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import {
-  ArrowLeftRight, Ellipsis, FlaskConical, House, LineChart, Moon,
-  Search, Sun, Trophy, Wallet, type LucideIcon,
+  ArrowLeftRight, Bell, BellOff, CircleHelp, Ellipsis, FlaskConical,
+  House, LineChart, Moon, Search, Sun, Trophy, Wallet, type LucideIcon,
 } from "lucide-react";
 import { AccountProvider } from "./account";
 import { AccountSwitcher } from "./components/AccountSwitcher";
@@ -11,6 +11,8 @@ import { SearchBox } from "./components/SearchBox";
 import { ToastProvider } from "./components/Toast";
 import { MarketStatusPill } from "./components/liveness";
 import { getTheme, setTheme } from "./theme";
+import { GlossaryDialog } from "./components/HelpPanel";
+import { useEventWatcher } from "./hooks/useEvents";
 import Home from "./pages/Home";
 import { Skeleton } from "./components/ui";
 
@@ -72,11 +74,49 @@ function ThemeToggle() {
   );
 }
 
+const ICON_BTN =
+  "inline-flex h-8 w-8 cursor-pointer items-center justify-center " +
+  "rounded-md border border-border text-muted-foreground " +
+  "transition-colors hover:bg-muted hover:text-foreground";
+
+function BellButton() {
+  const [perm, setPerm] = useState<NotificationPermission>(
+    typeof Notification === "undefined" ? "denied" : Notification.permission);
+  const inDesktop = typeof window !== "undefined" &&
+    Boolean((window as unknown as { pywebview?: unknown }).pywebview);
+  const Icon = perm === "granted" || inDesktop ? Bell : BellOff;
+  const label = inDesktop ? "桌面通知已开启（由程序发送）"
+    : perm === "granted" ? "条件单通知已开启"
+    : perm === "denied" ? "通知已被浏览器拒绝 — 请在地址栏站点设置中重新允许"
+    : "开启条件单通知";
+  return (
+    <button
+      onClick={() => {
+        if (inDesktop) return;
+        if (perm === "default" && typeof Notification !== "undefined")
+          Notification.requestPermission().then(setPerm);
+      }}
+      className={ICON_BTN}
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="size-4" />
+    </button>
+  );
+}
+
+function EventWatcher() {
+  useEventWatcher();
+  return null;
+}
+
 export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <ToastProvider>
+      <EventWatcher />
       <AccountProvider>
       <HashRouter>
         <div className="flex min-h-full flex-col">
@@ -117,6 +157,15 @@ export default function App() {
                   <Search className="size-4" />
                 </button>
                 <KeyButton />
+                <BellButton />
+                <button
+                  onClick={() => setHelpOpen(true)}
+                  className={ICON_BTN}
+                  aria-label="术语表与帮助"
+                  title="术语表与帮助"
+                >
+                  <CircleHelp className="size-4" />
+                </button>
                 <ThemeToggle />
               </div>
             </div>
@@ -195,6 +244,7 @@ export default function App() {
               ))}
             </div>
           )}
+          {helpOpen && <GlossaryDialog onClose={() => setHelpOpen(false)} />}
         </div>
       </HashRouter>
       </AccountProvider>

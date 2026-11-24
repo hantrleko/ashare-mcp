@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { LineSeries } from "lightweight-charts";
-import { api, type ArenaLeaderboard } from "../api";
+import { api, type ArenaLeaderboard, type ArenaPreview } from "../api";
 import { Card, EmptyState, ErrorBanner, Skeleton } from "../components/ui";
 import { useChart } from "../components/chart";
 import { useToast } from "../components/Toast";
@@ -17,6 +17,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { PageIntro } from "../components/Intro";
+import { InfoTip } from "../components/InfoTip";
+import { cssVar, onThemeChange } from "../theme";
 
 const COLORS = SERIES;
 
@@ -150,6 +153,70 @@ function RegisterDialog({ onClose, onDone }: {
   );
 }
 
+function PreviewChart({ pv }: { pv: ArenaPreview }) {
+  const { ref, chart } = useChart({ height: 260 });
+  useEffect(() => {
+    if (!chart || !pv.dates || !pv.series) return;
+    const defs: [keyof typeof pv.series, string, string][] = [
+      ["trend", "趋势跟踪", cssVar("--color-accent")],
+      ["momentum", "动量", SERIES[3]],
+      ["bench", "沪深300", BENCHMARK],
+    ];
+    const added = defs.map(([k, title, color]) => {
+      const s = chart.addSeries(LineSeries, { color, lineWidth: 2, title });
+      s.setData(pv.dates!.map((d, i) => ({
+        time: toDay(d), value: pv.series![k][i] * 100,
+      })));
+      return s;
+    });
+    chart.timeScale().fitContent();
+    const off = onThemeChange(() =>
+      added[0].applyOptions({ color: cssVar("--color-accent") }));
+    return () => off();
+  }, [chart, pv]);
+  return <div ref={ref} className="w-full min-w-0 overflow-hidden" />;
+}
+
+function PreviewCard({ busy, onEnable }: { busy: boolean; onEnable: () => void }) {
+  const [pv, setPv] = useState<ArenaPreview | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.arenaPreview().then(setPv).catch(setErr); }, []);
+  if (err) return null;
+  if (!pv) return <Skeleton rows={4} />;
+  if (pv.state === "running")
+    return <Card><EmptyState text="规则回测预览计算中（后台预热任务）…" /></Card>;
+  if (pv.state !== "ready" || !pv.series) return null;
+  const st = pv.stats ?? {};
+  const latest = pv.latest ?? { trend: [], momentum: [] };
+  return (
+    <Card title={<>内置规则近半年回测预览（非实盘记录）<InfoTip term="幸存者偏差" /></>}
+          className="overflow-hidden">
+      <PreviewChart pv={pv} />
+      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+        <span>趋势跟踪 {st.trend ? fmtPct(st.trend.total * 100) : "—"} · 回撤 {st.trend ? fmtDD(st.trend.max_dd * 100) : "—"}</span>
+        <span>动量 {st.momentum ? fmtPct(st.momentum.total * 100) : "—"} · 回撤 {st.momentum ? fmtDD(st.momentum.max_dd * 100) : "—"}</span>
+        <span>沪深300 {st.bench ? fmtPct(st.bench.total * 100) : "—"} · 回撤 {st.bench ? fmtDD(st.bench.max_dd * 100) : "—"}</span>
+        <span>低估值：{pv.value_note ?? "需实盘运行（无历史估值数据，无法回测）"}</span>
+      </div>
+      {(latest.trend.length > 0 || latest.momentum.length > 0) && (
+        <div className="mt-2 text-xs text-muted-foreground">
+          最新目标：
+          趋势跟踪 [{latest.trend.slice(0, 10).map((t) => t.name || t.code).join(" ")}]
+          {" "}动量 [{latest.momentum.slice(0, 10).map((t) => t.name || t.code).join(" ")}]
+        </div>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground/80">
+        {pv.caption ??
+          "周末收盘后选股、下一交易日收盘价成交、等权、未计交易成本；股票池为当前市值前300，存在幸存者偏差和前视偏差。仅用于了解规则特点。"}
+      </p>
+      <Button variant="outline" size="sm" className="mt-2" disabled={busy}
+              onClick={onEnable}>
+        {busy ? "启用中…" : "启用内置选手"}
+      </Button>
+    </Card>
+  );
+}
+
 export default function Arena() {
   const [lb, setLb] = useState<ArenaLeaderboard | null>(null);
   const [err, setErr] = useState<unknown>(null);
@@ -201,8 +268,13 @@ export default function Arena() {
         </div>
       </div>
 
+      <PageIntro page="arena" />
       {err != null && <ErrorBanner error={err} onRetry={load} />}
       {!err && !lb && <Skeleton rows={8} />}
+
+      {lb && !hasHouse && (
+        <PreviewCard busy={busy} onEnable={enableHouse} />
+      )}
 
       {lb && rows.length === 0 && (
         <Card title="还没有 Agent 参赛">
@@ -238,11 +310,11 @@ export default function Arena() {
                     <TableHead>Agent</TableHead>
                     <TableHead>模型</TableHead>
                     <TableHead className="num">收益</TableHead>
-                    <TableHead className="num">超额</TableHead>
-                    <TableHead className="num">回撤</TableHead>
-                    <TableHead className="num">夏普</TableHead>
+                    <TableHead className="num">超额<InfoTip term="超额收益" /></TableHead>
+                    <TableHead className="num">回撤<InfoTip term="最大回撤" /></TableHead>
+                    <TableHead className="num">夏普<InfoTip term="夏普" /></TableHead>
                     <TableHead className="num">交易</TableHead>
-                    <TableHead className="num">胜率</TableHead>
+                    <TableHead className="num">胜率<InfoTip term="胜率" /></TableHead>
                     <TableHead>最近交易</TableHead>
                   </TableRow>
                 </TableHeader>

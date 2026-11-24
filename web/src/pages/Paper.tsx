@@ -16,6 +16,9 @@ import { Input, Label, Select } from "@/components/ui/input";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { PageIntro } from "../components/Intro";
+import { InfoTip } from "../components/InfoTip";
+import { DemoButton } from "../components/Demo";
 
 export default function Paper() {
   const toast = useToast();
@@ -63,10 +66,11 @@ export default function Paper() {
 
   return (
     <div className="space-y-4">
+      <PageIntro page="paper" />
       <ErrorBanner error={err} onRetry={load} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500">
-          A股规则：1手=100股 · T+1 · 涨跌停校验 · 佣金万2.5(最低5元)+印花税万5(卖出)+过户费万0.1
+          A股规则：1手=100股 · T+1<InfoTip term="T+1" /> · 涨跌停校验 · 佣金万2.5(最低5元)+印花税万5(卖出)+过户费万0.1
         </p>
         <AccountHeader
           name={cur?.name ?? account}
@@ -112,7 +116,7 @@ export default function Paper() {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {["代码", "名称", "持仓", "可卖(T+1)", "今日买入", "成本", "现价", "市值", "盈亏", ""].map((h) => (
-                    <TableHead key={h}>{h}</TableHead>
+                    <TableHead key={h}>{h}{h === "可卖(T+1)" && <InfoTip term="T+1" />}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -147,6 +151,13 @@ export default function Paper() {
         ) : <EmptyState icon={Inbox} text="暂无持仓（在个股页快捷交易下单）" />}
       </Card>
 
+      {!pos.length && !orders.length && (
+        <Card>
+          <EmptyState icon={Inbox} text="账户还没有任何交易，可以从一个示例账户开始体验" />
+          <div className="mt-3 text-center"><DemoButton /></div>
+        </Card>
+      )}
+
       <TriggerPanel account={account} trigs={trigs} sched={sched}
                     onChange={load} toast={toast} canMutate={canMutate} />
 
@@ -157,7 +168,9 @@ export default function Paper() {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {["时间", "代码", "名称", "方向", "股数", "价格", "金额", "费用", "实现盈亏", "状态"].map((h) => (
-                    <TableHead key={h}>{h}</TableHead>
+                    <TableHead key={h}>
+                      {h}{h === "状态" && <InfoTip term="被拦截订单" />}
+                    </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>

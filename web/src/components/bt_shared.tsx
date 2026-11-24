@@ -9,7 +9,7 @@ import type { EquityPoint } from "../api";
 
 export const inp = cn(inputCls, "num w-full");
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
       <Label>{label}</Label>
@@ -18,7 +18,7 @@ export function Field({ label, children }: { label: string; children: React.Reac
   );
 }
 
-export function M({ label, v, cls = "" }: { label: string; v: string; cls?: string }) {
+export function M({ label, v, cls = "" }: { label: React.ReactNode; v: string; cls?: string }) {
   return (
     <div className="rounded-lg border border-line bg-panel px-4 py-3">
       <div className="text-xs text-slate-500">{label}</div>

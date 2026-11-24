@@ -172,6 +172,7 @@ class PaperAccount:
             except Exception as e:
                 t["status"] = "failed"
                 t["error"] = str(e)
+                t["failed_at"] = datetime.now().isoformat(timespec="seconds")
         if self.state.get("triggers"):
             self._save()
 

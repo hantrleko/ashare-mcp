@@ -11,6 +11,7 @@ import { Input, Label } from "@/components/ui/input";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { InfoTip } from "../components/InfoTip";
 
 const SCAN_PARAMS: Record<string, [string, string, number, number, number][]> = {
   // key, label, default start, default stop, default step
@@ -94,7 +95,7 @@ export default function BtScan() {
           </Field>
           <Field label="开始日期"><input value={start} onChange={(e) => setStart(e.target.value)} className={inp} /></Field>
           <Field label="结束日期"><input value={end} onChange={(e) => setEnd(e.target.value)} className={inp} /></Field>
-          <Field label={`样本内占比 ${split}%`}>
+          <Field label={<>样本内占比 {split}%<InfoTip term="样本内外" /></>}>
             <input type="range" min={50} max={85} value={split}
               onChange={(e) => setSplit(Number(e.target.value))} className="mt-2 w-full" />
           </Field>

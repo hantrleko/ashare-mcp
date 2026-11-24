@@ -103,7 +103,8 @@ def enabled() -> bool:
 
 
 def status() -> dict[str, Any]:
-    return {**_state, "enabled": enabled() and _state["enabled"]}
+    return {**_state, "enabled": enabled() and _state["enabled"],
+            "prewarm": dict(_prewarm)}
 
 
 # ---------- helpers injected from api.py (kept lazy to avoid circulars) ----------
@@ -265,10 +266,142 @@ def settle_tick(force: bool = False, get_index_kline: Callable | None = None,
     return report
 
 
+# ---------------- background prewarm ----------------
+
+_prewarm: dict[str, Any] = {"state": "idle", "step": "", "done": 0,
+                           "total": 0, "finished_at": None, "error": None}
+_prewarm_thread: threading.Thread | None = None
+PREWARM_MARKER = "prewarm.json"
+# After a failed run, do not retry for this long — during an outage the
+# 60 s scheduler loop would otherwise hammer the sources.
+PREWARM_BACKOFF_SECS = 30 * 60
+_prewarm_backoff_until: float = 0.0  # time.monotonic() deadline
+_prewarm_done_lock = threading.Lock()
+
+
+def prewarm_enabled() -> bool:
+    return os.environ.get("ASHARE_PREWARM", "1").strip() != "0"
+
+
+def _prewarm_marker_path():
+    from ..config import data_dir
+    return data_dir() / PREWARM_MARKER
+
+
+def _prewarm_marker() -> dict[str, Any]:
+    try:
+        import json
+        return json.loads(_prewarm_marker_path().read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _prewarm_due(today_iso: str) -> bool:
+    return _prewarm_marker().get("date") != today_iso
+
+
+def _pw(step: str | None = None, done: int | None = None,
+        total: int | None = None, state: str | None = None,
+        error: str | None = None) -> None:
+    if step is not None:
+        _prewarm["step"] = step
+    if done is not None:
+        _prewarm["done"] = done
+    if total is not None:
+        _prewarm["total"] = total
+    if state is not None:
+        _prewarm["state"] = state
+    if error is not None:
+        _prewarm["error"] = error
+
+
+def _prewarm_run() -> None:
+    """Warm the caches most cold-start requests hit, once per day.
+
+    Runs only inside the process that holds the scheduler lock (spawned
+    from _loop / the takeover waiter).
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    import json
+    today = _now().date().isoformat()
+    counts: dict[str, Any] = {}
+    _pw(state="running", step="spot", done=0, total=5, error=None)
+    try:
+        from ..data import akshare_data as ad
+        spot = ad._spot_df()
+        counts["spot_rows"] = int(len(spot))
+        _pw(step="industry", done=1)
+        from ..research import industry
+        counts["industries"] = len(industry.industry_map())
+        _pw(step="index", done=2)
+        from .api import INDEX_BOARD
+        from ..data.facade import market_data
+        gik = lambda sym, **kw: market_data.call("get_index_kline", sym,
+                                                 **kw)
+        for idx, _name in INDEX_BOARD:
+            gik(idx, period="daily")
+        counts["indices"] = len(INDEX_BOARD)
+        _pw(step="stocks", done=3)
+        from ..trading import house
+        uni = house._universe()
+        codes = [str(c)[-6:] for c in uni["code6"]]
+        counts["universe"] = len(codes)
+        _prewarm["total"] = 4 + len(codes)
+        warmed = [0]
+
+        def _one(c: str) -> None:
+            try:
+                market_data.call("get_kline", c, period="daily",
+                                 adjust="qfq")
+            except Exception as e:
+                log.debug("prewarm kline %s failed: %s", c, e)
+            finally:
+                with _prewarm_done_lock:
+                    warmed[0] += 1
+                    _pw(done=_prewarm["done"] + 1)
+
+        with ThreadPoolExecutor(max_workers=2,
+                                thread_name_prefix="prewarm") as ex:
+            for c in codes:
+                ex.submit(_one, c)
+                time.sleep(0.3)
+        counts["warmed"] = warmed[0]
+        _pw(step="arena_preview")
+        house.compute_preview()
+        counts["arena_preview"] = True
+        _prewarm_marker_path().write_text(
+            json.dumps({"date": today, **counts}, ensure_ascii=False),
+            encoding="utf-8")
+        _pw(state="done", step="", done=_prewarm["total"])
+        _prewarm["finished_at"] = _now().isoformat(timespec="seconds")
+        log.info("prewarm done: %s", counts)
+    except Exception as e:
+        global _prewarm_backoff_until
+        _prewarm_backoff_until = time.monotonic() + PREWARM_BACKOFF_SECS
+        _pw(state="error", error=str(e))
+        log.exception("prewarm failed; backing off %ds",
+                      PREWARM_BACKOFF_SECS)
+
+
+def _maybe_prewarm(today_iso: str) -> bool:
+    """Start the once-a-day prewarm thread if due. Returns True if started."""
+    global _prewarm_thread
+    if not prewarm_enabled() or _prewarm["state"] == "running" \
+            or time.monotonic() < _prewarm_backoff_until \
+            or not _prewarm_due(today_iso):
+        return False
+    _prewarm_thread = threading.Thread(target=_prewarm_run, daemon=True,
+                                       name="ashare-prewarm")
+    _prewarm_thread.start()
+    return True
+
+
 def _loop() -> None:
     while True:
         try:
             now = _now()
+            _maybe_prewarm(now.date().isoformat())
             if _in_session(now):
                 trigger_tick()
             elif now.time() >= dtime(15, 35) and now.weekday() < 5 \

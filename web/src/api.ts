@@ -106,9 +106,35 @@ export interface AccountInfo {
 
 export interface SchedulerStatus {
   enabled: boolean;
+  reason?: string | null;
   last_trigger_check: string | null;
   last_settlement_date: string | null;
   last_error: string | null;
+  prewarm?: PrewarmStatus;
+}
+
+export interface PrewarmStatus {
+  state: "idle" | "running" | "done" | "error";
+  step: string; done: number; total: number;
+  finished_at: string | null; error: string | null;
+}
+
+export interface AppEvent {
+  id: string; account_id: string; account_name: string;
+  kind: "trigger_filled" | "trigger_failed";
+  symbol: string; name: string; side: string; shares: number;
+  price: number | null; at: string; error: string | null;
+}
+
+export interface ArenaPreview {
+  state: "ready" | "running" | "missing";
+  days?: number; dates?: string[];
+  series?: Record<"trend" | "momentum" | "bench", number[]>;
+  stats?: Record<string, { total: number; max_dd: number }>;
+  latest?: Record<"trend" | "momentum",
+                 { code: string; name: string; rank: number;
+                   metrics: Record<string, number>; note: string }[]>;
+  value_note?: string; caption?: string;
 }
 
 export interface BreadthDist { range: string; count: number }
@@ -311,6 +337,10 @@ export const api = {
   accountDelete: (id: string) =>
     req<Record<string, unknown>>(`/accounts/${enc(id)}`, { method: "DELETE" }),
   scheduler: () => req<SchedulerStatus>("/scheduler"),
+  events: (since = "") =>
+    req<{ data: AppEvent[]; now: string }>(
+      `/events?since=${enc(since)}`),
+  arenaPreview: () => req<ArenaPreview>("/arena/preview"),
   marketClock: () =>
     req<{ date: string; server_time: string; is_trading_day: boolean | null }>("/market-clock"),
 

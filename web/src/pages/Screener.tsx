@@ -8,6 +8,9 @@ import { useToast } from "../components/Toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input, Select } from "@/components/ui/input";
+import { PageIntro } from "../components/Intro";
+import { InfoTip } from "../components/InfoTip";
+import { PrewarmLine } from "./Home";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -34,6 +37,10 @@ const RANGE_DEFS: { k: RangeKey; label: string; unit?: "亿" | "%" }[] = [
 ];
 const YI = new Set(["mkt_cap", "float_mkt_cap", "amount"]);
 const MOM_DEFS = [{ k: "mom_20", label: "20日动量%" }, { k: "mom_60", label: "60日动量%" }] as const;
+const RANGE_TIPS: Record<string, string> = {
+  turnover: "换手率", pe_ttm: "PE(TTM)", pb: "PB",
+  roe_est: "估算ROE", volume_ratio: "量比",
+};
 const BOARDS: { k: string; label: string }[] = [
   { k: "main", label: "主板" }, { k: "chinext", label: "创业板" },
   { k: "star", label: "科创板" }, { k: "bse", label: "北交所" },
@@ -257,6 +264,8 @@ export default function Screener() {
 
   return (
     <div className="space-y-4">
+      <PageIntro page="screener" />
+      <PrewarmLine />
       <Card title="选股器" extra={
         <Button variant="outline" size="sm" onClick={() => setFiltersOpen(!filtersOpen)}
           className="sm:hidden">
@@ -305,13 +314,13 @@ export default function Screener() {
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs sm:grid-cols-3 lg:grid-cols-4">
             {RANGE_DEFS.map((d) => (
               <div key={d.k} className="flex min-w-0 items-center gap-1">
-                <span className="w-[4.5rem] shrink-0 text-slate-500">{d.label}{d.unit ?? ""}</span>
+                <span className="w-[4.5rem] shrink-0 text-slate-500">{d.label}{d.unit ?? ""}{RANGE_TIPS[d.k] && <InfoTip term={RANGE_TIPS[d.k]} />}</span>
                 {boundInput(d.k, "min")}{boundInput(d.k, "max")}
               </div>
             ))}
             {MOM_DEFS.map((d) => (
               <div key={d.k} className="flex min-w-0 items-center gap-1" title="动量需逐只取K线，候选限200只">
-                <span className="w-[4.5rem] shrink-0 text-slate-500">{d.label}</span>
+                <span className="w-[4.5rem] shrink-0 text-slate-500">{d.label}<InfoTip term={d.k} label={d.label.replace("%", "")} /></span>
                 {boundInput(d.k, "min")}{boundInput(d.k, "max")}
               </div>
             ))}

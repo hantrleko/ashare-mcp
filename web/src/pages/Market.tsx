@@ -6,6 +6,7 @@ import { fmtAmount, pctClass, todayYmd } from "../format";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Seg } from "@/components/ui/tabs";
+import { PageIntro } from "../components/Intro";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -21,6 +22,7 @@ const KINDS: [string, string][] = [
 export default function Market() {
   return (
     <div className="space-y-5">
+      <PageIntro page="market" />
       <LimitPoolCard />
       <EarningsCard />
       <AnnouncementsCard />

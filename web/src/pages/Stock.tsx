@@ -18,6 +18,8 @@ import { cssVar, onThemeChange, withAlpha } from "../theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Seg } from "@/components/ui/tabs";
+import { PageIntro } from "../components/Intro";
+import { InfoTip } from "../components/InfoTip";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -109,6 +111,7 @@ export default function Stock() {
 
   return (
     <div className="space-y-4">
+      <PageIntro page="stock" />
       {/* header */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-2 rounded-lg border border-line bg-panel px-4 py-3">
         <div>
@@ -132,9 +135,9 @@ export default function Stock() {
           <Hd label="最低" v={fmtPrice(quote?.low)} cls="text-down" />
           <Hd label="昨收" v={fmtPrice(quote?.prev_close)} />
           <Hd label="成交额" v={fmtAmount(quote?.amount)} />
-          <Hd label="换手率" v={quote?.turnover != null ? fmtPct(quote.turnover).replace("+", "") : "—"} />
-          <Hd label="PE(TTM)" v={quote?.pe_ttm != null ? fmtPrice(quote.pe_ttm, 1) : "—"} />
-          <Hd label="PB" v={quote?.pb != null ? fmtPrice(quote.pb, 2) : "—"} />
+          <Hd label={<>换手率<InfoTip term="换手率" /></>} v={quote?.turnover != null ? fmtPct(quote.turnover).replace("+", "") : "—"} />
+          <Hd label={<>PE(TTM)<InfoTip term="PE(TTM)" /></>} v={quote?.pe_ttm != null ? fmtPrice(quote.pe_ttm, 1) : "—"} />
+          <Hd label={<>PB<InfoTip term="PB" /></>} v={quote?.pb != null ? fmtPrice(quote.pb, 2) : "—"} />
         </div>
       </div>
       <div className="text-xs text-slate-500">
@@ -157,6 +160,7 @@ export default function Stock() {
                 options={[["qfq", "前复权"], ["hfq", "后复权"], ["", "不复权"]]}
                 value={adjust} onChange={setAdjust}
               />
+              <InfoTip term="前复权" />
               <Seg
                 options={RANGES.map((r) => [r.k, r.label] as [string, string])}
                 value={range} onChange={(v) => setRange(v as RangeKey)}
@@ -214,7 +218,7 @@ export default function Stock() {
   );
 }
 
-function Hd({ label, v, cls = "" }: { label: string; v: string; cls?: string }) {
+function Hd({ label, v, cls = "" }: { label: React.ReactNode; v: string; cls?: string }) {
   return (
     <div>
       <div className="text-slate-500">{label}</div>

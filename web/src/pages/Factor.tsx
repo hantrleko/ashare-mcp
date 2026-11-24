@@ -14,6 +14,10 @@ import { FlaskConical, Minus, Plus } from "lucide-react";
 import { cssVar } from "../theme";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/input";
+import { PageIntro } from "../components/Intro";
+import { InfoTip } from "../components/InfoTip";
+import { PrewarmLine } from "./Home";
+import { FACTOR_TIPS } from "../lib/glossary";
 
 /** Ordered quantile scale — Q1..Qq colours plus an accent slot for the
  *  old purple series (now read from the theme). */
@@ -86,6 +90,8 @@ export default function Factor() {
 
   return (
     <div className="space-y-4">
+      <PageIntro page="factor" />
+      <PrewarmLine />
       <Card title="因子检验" extra={
         <span className="text-xs text-slate-500">截面 IC · 分位组合 · 多空</span>}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -111,7 +117,7 @@ export default function Factor() {
               <div className="flex flex-wrap gap-1.5">
                 {factors.map((f) => (
                   <span key={f.id} className="inline-flex items-center gap-0.5 rounded-md border border-border px-1.5 py-0.5 text-xs">
-                    {f.name}
+                    {f.name}<InfoTip term={f.id} label={f.name} text={FACTOR_TIPS[f.id]} />
                     <button className="cursor-pointer p-0.5 text-up hover:bg-up/15 rounded" title="正向" aria-label={`正向加入 ${f.name}`}
                       onClick={() => setComp([...comp, { factor: f.id, sign: 1 }])}><Plus className="size-3" /></button>
                     <button className="cursor-pointer p-0.5 text-down hover:bg-down/15 rounded" title="负向" aria-label={`负向加入 ${f.name}`}
@@ -137,6 +143,7 @@ export default function Factor() {
           {mode === "single" && (
             <div className="col-span-2 self-end pb-1 text-xs text-slate-500">
               {factors.find((f) => f.id === factor)?.desc}
+              {" "}<InfoTip term={factor} label={factors.find((f) => f.id === factor)?.name} text={FACTOR_TIPS[factor]} />
             </div>
           )}
           <Field label="股票池">
@@ -184,6 +191,27 @@ export default function Factor() {
             className="px-4">
             {running ? "运行中…" : "开始检验"}
           </Button>
+          <Button variant="outline" disabled={!!running}
+            onClick={() => {
+              setMode("single"); setFactor("mom_20"); setUniverse("top_cap");
+              setSize(100); setStart("2022-01-01");
+              setEnd(new Date().toISOString().slice(0, 10));
+              setErr(null); setJob(null);
+              api.factorSubmit({
+                factor: "mom_20", composite: null,
+                universe: "top_cap", universe_size: 100, symbols: null,
+                start_date: "2022-01-01",
+                end_date: new Date().toISOString().slice(0, 10),
+                freq, quantiles: q,
+              }).then((r) => {
+                setJob({ job_id: r.job_id, state: "queued",
+                         progress: { loaded: 0, total: 0, stage: "queued" },
+                         error: null, result: null });
+                poll(r.job_id);
+              }).catch(setErr);
+            }}>
+            示例：市值前100 · 20日动量
+          </Button>
           {running && (
             <div className="flex-1">
               <div className="mb-1 flex justify-between text-xs text-slate-500">
@@ -229,17 +257,22 @@ function Results({ res }: { res: FactorResult }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-        <M label="RankIC 均值" v={fmtNum4(rs.mean)}
+        <M label={<>RankIC 均值<InfoTip term="RankIC" /></>} v={fmtNum4(rs.mean)}
           cls={signedClass(rs.mean)} />
-        <M label="RankIC IR" v={fmtNum4(rs.icir)} cls={signedClass(rs.icir)} />
-        <M label="t 值" v={fmtNum4(rs.t)} cls={signedClass(rs.t)} />
-        <M label="IC>0 占比" v={rs.pos_ratio == null ? "—"
+        <M label={<>RankIC IR<InfoTip term="ICIR" /></>} v={fmtNum4(rs.icir)}
+          cls={signedClass(rs.icir)} />
+        <M label={<>t 值<InfoTip term="t值" /></>} v={fmtNum4(rs.t)}
+          cls={signedClass(rs.t)} />
+        <M label={<>IC&gt;0 占比<InfoTip term="IC" /></>}
+          v={rs.pos_ratio == null ? "—"
           : `${(rs.pos_ratio * 100).toFixed(0)}%`} />
-        <M label="IC 均值" v={fmtNum4(res.ic_summary.mean)}
+        <M label={<>IC 均值<InfoTip term="IC" /></>} v={fmtNum4(res.ic_summary.mean)}
           cls={signedClass(res.ic_summary.mean)} />
-        <M label="多空年化" v={fmtPct(lsAnn == null ? null : lsAnn * 100)}
+        <M label={<>多空年化<InfoTip term="多空收益" /><InfoTip term="年化" /></>}
+          v={fmtPct(lsAnn == null ? null : lsAnn * 100)}
           cls={signedClass(lsAnn)} />
-        <M label="头部组换手" v={res.top_turnover == null ? "—"
+        <M label={<>头部组换手<InfoTip term="换手率" /></>}
+          v={res.top_turnover == null ? "—"
           : `${(res.top_turnover * 100).toFixed(1)}%`} />
       </div>
       <div className="mt-2 text-xs text-slate-500">
@@ -251,19 +284,19 @@ function Results({ res }: { res: FactorResult }) {
           ` · 样本不足剔除 ${res.dates_dropped_small.length} 期`}
       </div>
 
-      <Card title="RankIC（柱）与累计 RankIC（线）">
+      <Card title={<>RankIC（柱）与累计 RankIC（线）<InfoTip term="RankIC" /></>}>
         <RankICChart res={res} />
       </Card>
-      <Card title={`分位组合净值（Q1 因子最低 · LS = ${topQ}−Q1）`}>
+      <Card title={<>分位组合净值（Q1 因子最低 · LS = {topQ}−Q1）<InfoTip term="分组净值" /></>}>
         <NavChart res={res} />
       </Card>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card title="分组年化收益">
+        <Card title={<>分组年化收益<InfoTip term="年化" /></>}>
           <BarChart data={Object.entries(res.quantile_annual)
             .map(([k, v]) => ({ label: k === "LS" ? `LS(${topQ}−Q1)` : k,
                                 v: v == null ? 0 : v * 100 }))} />
         </Card>
-        <Card title="IC 衰减（RankIC 均值 × 前第 L 期）">
+        <Card title={<>IC 衰减（RankIC 均值 × 前第 L 期）<InfoTip term="IC衰减" /></>}>
           <BarChart data={res.ic_decay.map((d) => ({
             label: `L${d.lag}`,
             v: d.rank_ic_mean == null ? 0 : d.rank_ic_mean * 100,

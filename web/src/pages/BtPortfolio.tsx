@@ -10,6 +10,7 @@ import { DOWN, UP, ddClass, fmtDD, fmtNum, fmtPct, fmtSigned, signedClass, today
 import { X } from "lucide-react";
 import { cssVar, onThemeChange } from "../theme";
 import { BENCHMARK } from "../lib/palette";
+import { InfoTip } from "../components/InfoTip";
 import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -84,7 +85,7 @@ export default function BtPortfolio({ initial, autoRun }: {
         </div>
         <SearchBox className="mb-3" onPick={addCode} />
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Field label="权重">
+          <Field label={<>权重<InfoTip term="等权" /><InfoTip term="波动率倒数加权" /></>}>
             <select value={weighting} onChange={(e) => setWeighting(e.target.value)} className={inp}>
               <option value="equal">等权</option>
               <option value="inverse_vol">波动率倒数</option>
@@ -128,7 +129,7 @@ function PfResult({ res, names }: { res: PortfolioResult; names: Record<string, 
         <M label="基准年化" v={fmtPct(res.benchmark_annual_return * 100)} cls={signedClass(res.benchmark_annual_return)} />
         <M label="超额年化" v={fmtPct(res.excess_annual * 100)} cls={signedClass(res.excess_annual)} />
         <M label="最大回撤" v={fmtDD(res.max_drawdown * 100)} cls={ddClass(res.max_drawdown)} />
-        <M label="年换手" v={res.annual_turnover != null ? res.annual_turnover.toFixed(2) + "×" : "—"} />
+        <M label={<>年换手<InfoTip term="组合换手率" /></>} v={res.annual_turnover != null ? res.annual_turnover.toFixed(2) + "×" : "—"} />
         <M label="调仓/拦截" v={`${res.num_rebalances}次 / ${res.blocked_orders}笔`} />
       </div>
       <p className="text-xs text-slate-500">

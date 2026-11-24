@@ -11,7 +11,9 @@ from PyInstaller.utils.hooks import (
 
 block_cipher = None
 
-datas = []
+# spec-relative paths resolve against packaging/ regardless of cwd
+_ICO = "ashare.ico"
+datas = [(_ICO, ".")]  # tray NotifyIcon reads it from _internal
 binaries = []
 hiddenimports = []
 
@@ -81,7 +83,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="ashare.ico",
+    icon=_ICO,
 )
 
 coll = COLLECT(
