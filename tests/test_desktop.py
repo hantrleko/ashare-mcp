@@ -36,8 +36,8 @@ def test_data_dir_frozen_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(desktop, "_frozen", lambda: True)
     monkeypatch.setattr(desktop, "_exe_dir", lambda: tmp_path)
     monkeypatch.setenv("APPDATA", str(tmp_path / "roam"))
-    got = desktop._resolve_data_dir()
-    assert got == tmp_path / "roam" / "ashare-mcp" / "data"
+    from ashare_mcp.config import user_data_dir
+    assert desktop._resolve_data_dir() == user_data_dir()
 
 
 def test_data_dir_frozen_bad_json(tmp_path, monkeypatch):
@@ -47,8 +47,8 @@ def test_data_dir_frozen_bad_json(tmp_path, monkeypatch):
     (tmp_path / "ashare-desktop.json").write_text("not json",
                                                  encoding="utf-8")
     monkeypatch.setenv("APPDATA", str(tmp_path / "roam"))
-    assert desktop._resolve_data_dir() == \
-        tmp_path / "roam" / "ashare-mcp" / "data"
+    from ashare_mcp.config import user_data_dir
+    assert desktop._resolve_data_dir() == user_data_dir()
 
 
 # ---------- attach decision ----------
