@@ -289,7 +289,7 @@ async def _lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title="ashare-mcp web", version="0.7.0", lifespan=_lifespan)
+app = FastAPI(title="ashare-mcp web", version="0.7.1", lifespan=_lifespan)
 
 
 @app.middleware("http")
